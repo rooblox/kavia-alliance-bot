@@ -4,7 +4,7 @@ const { REST, Routes } = require('discord.js');
 
 // Replace with your bot & guild IDs
 const clientId = '1454554780285403403';
-const guildId = '1454555005725048894';
+const guildId = '1385081586285940796';
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
