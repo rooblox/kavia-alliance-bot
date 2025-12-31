@@ -1,9 +1,9 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { loadAlliances } = require('../utils/allianceStorage');
 const fs = require('fs');
 
-const alliancesFile = './alliances.json';
 const messageIdFile = './alliancesMessage.json';
-const channelId = '1454552983688843305'; // Channel to post the list in
+const channelId = '1454552983688843305'; // Production channel
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -11,34 +11,32 @@ module.exports = {
         .setDescription('Post or update the alliance list in the designated channel'),
 
     async execute(interaction, client) {
-        try {
-            // Read alliances from file
-            const alliancesData = fs.readFileSync(alliancesFile, 'utf-8');
-            const alliances = JSON.parse(alliancesData);
+        await interaction.deferReply({ ephemeral: true });
 
-            if (!alliances || alliances.length === 0) {
-                return interaction.reply({ content: 'No alliances found in the list.', ephemeral: true });
+        try {
+            const alliances = loadAlliances();
+
+            if (!alliances.length) {
+                return await interaction.editReply('No alliances found.');
             }
 
-            // Build the embed
             const embed = new EmbedBuilder()
-                .setTitle('📜 Alliance List')
-                .setColor('Green')
+                .setTitle('📜 Current Alliances')
+                .setColor('Blue')
                 .setTimestamp();
 
-            alliances.forEach((alliance, index) => {
+            alliances.forEach(a => {
                 embed.addFields({
-                    name: `${index + 1}. ${alliance.name || 'Unnamed Alliance'}`,
-                    value: `Leader: ${alliance.leader || 'Unknown'}\nMembers: ${alliance.members?.join(', ') || 'None'}`,
+                    name: a.groupName,
+                    value: `**Our Reps:** ${a.ourReps}\n**Their Reps:** ${a.theirReps}\n**Discord:** ${a.discordLink}\n**Roblox:** ${a.robloxLink}\n**Rep Role:** ${a.repRoleId ? `<@&${a.repRoleId}>` : 'None'}`,
                     inline: false
                 });
             });
 
-            // Fetch the channel
             const channel = await client.channels.fetch(channelId);
-            if (!channel) return interaction.reply({ content: 'Channel not found.', ephemeral: true });
+            if (!channel) return interaction.editReply('Channel not found.');
 
-            // Read or initialize message ID
+            // Read existing message ID or initialize
             let messageIdData = { messageId: null };
             if (fs.existsSync(messageIdFile)) {
                 messageIdData = JSON.parse(fs.readFileSync(messageIdFile));
@@ -47,27 +45,26 @@ module.exports = {
             let message;
             if (messageIdData.messageId) {
                 try {
-                    // Try to fetch existing message
+                    // Try to fetch existing message and update it
                     message = await channel.messages.fetch(messageIdData.messageId);
-                    await message.edit({ embeds: [embed] }); // Update it
+                    await message.edit({ embeds: [embed] });
                 } catch {
-                    // If message doesn't exist, send new
+                    // If message not found, send a new one
                     message = await channel.send({ embeds: [embed] });
                     messageIdData.messageId = message.id;
                     fs.writeFileSync(messageIdFile, JSON.stringify(messageIdData, null, 2));
                 }
             } else {
-                // First time posting
+                // First-time posting
                 message = await channel.send({ embeds: [embed] });
                 messageIdData.messageId = message.id;
                 fs.writeFileSync(messageIdFile, JSON.stringify(messageIdData, null, 2));
             }
 
-            await interaction.reply({ content: '✅ Alliance list posted/updated successfully!', ephemeral: true });
-
+            await interaction.editReply('✅ Alliance list posted/updated successfully!');
         } catch (err) {
-            console.error('Error posting/updating alliance list:', err);
-            await interaction.reply({ content: '❌ Failed to post/update alliance list.', ephemeral: true });
+            console.error('Error posting alliance list:', err);
+            await interaction.editReply('❌ Failed to post/update alliance list.');
         }
     }
 };
