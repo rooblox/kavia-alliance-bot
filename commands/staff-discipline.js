@@ -4,8 +4,8 @@ const path = require('path');
 const { sendStrikeNotice } = require('../events/interactionCreate.js');
 
 const DATA_FILE = path.join(__dirname, '../staffDiscipline.json');
-const LOG_CHANNEL_ID = '1451561306082775081';
 const APPEAL_LINK = 'https://docs.google.com/forms/d/e/1FAIpQLSc3NkUHM6R25jl5MKuBBoBLxEO4E_2_caMXlO9BQsLEs3segg/viewform';
+const LOG_CHANNEL_ID = '1451561306082775081';
 
 function loadData() {
     if (!fs.existsSync(DATA_FILE)) return {};
@@ -20,27 +20,15 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('staff-discipline')
         .setDescription('Add or remove a strike from a staff member')
-        .addUserOption(option =>
-            option.setName('member')
-                .setDescription('Select the member to discipline')
-                .setRequired(true))
-        .addStringOption(option =>
-            option.setName('action')
-                .setDescription('Action to take')
-                .addChoices(
-                    { name: 'Add Strike', value: 'add' },
-                    { name: 'Remove Strike', value: 'remove' },
-                    { name: 'Terminate', value: 'terminate' }
-                )
-                .setRequired(true))
-        .addStringOption(option =>
-            option.setName('reason')
-                .setDescription('Reason for strike/termination')
-                .setRequired(true))
-        .addIntegerOption(option =>
-            option.setName('strike_number')
-                .setDescription('Strike number (for removal)')
-                .setRequired(false)),
+        .addUserOption(o => o.setName('member').setDescription('Select the member to discipline').setRequired(true))
+        .addStringOption(o => o.setName('action').setDescription('Action to take')
+            .addChoices(
+                { name: 'Add Strike', value: 'add' },
+                { name: 'Remove Strike', value: 'remove' },
+                { name: 'Terminate', value: 'terminate' }
+            ).setRequired(true))
+        .addStringOption(o => o.setName('reason').setDescription('Reason for strike/termination').setRequired(true))
+        .addIntegerOption(o => o.setName('strike_number').setDescription('Strike number (for removal)').setRequired(false)),
 
     async execute(interaction, client) {
         await interaction.deferReply({ ephemeral: true });
@@ -50,7 +38,7 @@ module.exports = {
         const reason = interaction.options.getString('reason');
         let strikeNumber = interaction.options.getInteger('strike_number');
 
-        // Load strikes from JSON
+        // LOAD from file
         const data = loadData();
         if (!data[member.id]) data[member.id] = [];
 
@@ -59,45 +47,37 @@ module.exports = {
         // ===== ADD STRIKE =====
         if (action === 'add') {
             strikeNumber = data[member.id].filter(s => s.active).length + 1;
-
-            const strike = {
-                strikeNumber,
-                reason,
-                active: true,
-                date: new Date().toLocaleString()
-            };
-
+            const strike = { strikeNumber, reason, active: true, date: new Date().toLocaleString() };
             data[member.id].push(strike);
-            saveData(data);
 
+            saveData(data); // ✅ Save to file
+
+            // Log in channel
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
                     .setTitle('📌 Staff Discipline Log')
                     .addFields(
-                        { name: 'Member', value: `<@${member.id}>`, inline: false },
-                        { name: 'Action', value: 'Add Strike', inline: false },
-                        { name: 'Reason', value: reason, inline: false },
-                        { name: 'Staff', value: `<@${interaction.user.id}>`, inline: false },
-                        { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                        { name: 'Member', value: `<@${member.id}>` },
+                        { name: 'Action', value: 'Add Strike' },
+                        { name: 'Reason', value: reason },
+                        { name: 'Staff', value: `<@${interaction.user.id}>` },
+                        { name: 'Date', value: new Date().toLocaleString() }
                     )
                     .setColor('Red');
-
                 logChannel.send({ embeds: [logEmbed] });
             }
 
+            // DM user
             try {
                 await sendStrikeNotice(client, member.id, strikeNumber, reason);
-            } catch (err) {
-                console.error('sendStrikeNotice failed:', err);
-            }
+            } catch (err) { console.error(err); }
 
             return interaction.editReply(`✅ Strike ${strikeNumber} added to ${member.tag}`);
         }
 
         // ===== REMOVE STRIKE =====
         if (action === 'remove') {
-            if (!strikeNumber) return interaction.editReply('❌ Please provide a strike number to remove.');
-
+            if (!strikeNumber) return interaction.editReply('❌ Please provide a strike number.');
             const strike = data[member.id].find(s => s.strikeNumber === strikeNumber && s.active);
             if (!strike) return interaction.editReply('❌ Strike not found or already removed.');
 
@@ -106,23 +86,23 @@ module.exports = {
             strike.removedDate = new Date().toLocaleString();
             strike.removalReason = reason;
 
-            saveData(data);
+            saveData(data); // ✅ Save to file
 
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
                     .setTitle('📌 Staff Discipline Log')
                     .addFields(
-                        { name: 'Member', value: `<@${member.id}>`, inline: false },
-                        { name: 'Action', value: 'Remove Strike', inline: false },
-                        { name: 'Reason', value: reason, inline: false },
-                        { name: 'Staff', value: `<@${interaction.user.id}>`, inline: false },
-                        { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                        { name: 'Member', value: `<@${member.id}>` },
+                        { name: 'Action', value: 'Remove Strike' },
+                        { name: 'Reason', value: reason },
+                        { name: 'Staff', value: `<@${interaction.user.id}>` },
+                        { name: 'Date', value: new Date().toLocaleString() }
                     )
                     .setColor('Orange');
-
                 logChannel.send({ embeds: [logEmbed] });
             }
 
+            // DM user
             try {
                 await member.send({
                     embeds: [
@@ -138,9 +118,7 @@ module.exports = {
                             )
                     ]
                 });
-            } catch (err) {
-                console.error('Failed to DM user on strike removal:', err);
-            }
+            } catch {}
 
             return interaction.editReply(`✅ Strike ${strikeNumber} removed from ${member.tag}`);
         }
@@ -151,14 +129,13 @@ module.exports = {
                 const logEmbed = new EmbedBuilder()
                     .setTitle('📌 Staff Discipline Log')
                     .addFields(
-                        { name: 'Member', value: `<@${member.id}>`, inline: false },
-                        { name: 'Action', value: 'Termination', inline: false },
-                        { name: 'Reason', value: reason, inline: false },
-                        { name: 'Staff', value: `<@${interaction.user.id}>`, inline: false },
-                        { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                        { name: 'Member', value: `<@${member.id}>` },
+                        { name: 'Action', value: 'Termination' },
+                        { name: 'Reason', value: reason },
+                        { name: 'Staff', value: `<@${interaction.user.id}>` },
+                        { name: 'Date', value: new Date().toLocaleString() }
                     )
                     .setColor('DarkRed');
-
                 logChannel.send({ embeds: [logEmbed] });
             }
 
@@ -168,18 +145,11 @@ module.exports = {
                         new EmbedBuilder()
                             .setTitle('⚠️ Termination Notice')
                             .setColor('DarkRed')
-                            .setDescription(
-                                `Greetings <@${member.id}>,\n\nYou have been **terminated** from Kavià Cafe.\n\n**Reason:** ${reason}`
-                            )
-                            .addFields({
-                                name: 'Appeal',
-                                value: `[Submit an appeal here](${APPEAL_LINK})`
-                            })
+                            .setDescription(`Greetings <@${member.id}>,\n\nYou have been **terminated** from Kavià Cafe.\n\n**Reason:** ${reason}`)
+                            .addFields({ name: 'Appeal', value: `[Submit an appeal here](${APPEAL_LINK})` })
                     ]
                 });
-            } catch (err) {
-                console.error('Failed to DM user on termination:', err);
-            }
+            } catch {}
 
             return interaction.editReply(`✅ ${member.tag} has been terminated.`);
         }
