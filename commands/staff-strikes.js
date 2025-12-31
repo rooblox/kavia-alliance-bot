@@ -9,7 +9,7 @@ function loadData() {
     return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 }
 
-// Utility: split long text into chunks <= maxLength
+// Split long text into chunks
 function chunkText(text, maxLength = 1024) {
     const chunks = [];
     let current = '';
@@ -22,9 +22,7 @@ function chunkText(text, maxLength = 1024) {
         current += line + '\n';
     }
 
-    if (current.trim().length > 0) {
-        chunks.push(current);
-    }
+    if (current.trim()) chunks.push(current);
 
     return chunks;
 }
@@ -40,59 +38,48 @@ module.exports = {
         ),
 
     async execute(interaction) {
-        await interaction.deferReply({ ephemeral: true });
-
         const member = interaction.options.getUser('member');
         const data = loadData();
         const strikes = data[member.id] || [];
 
-        if (strikes.length === 0) {
-            return interaction.editReply({
-                content: `✅ ${member.tag} has no strike history.`
-            });
+        if (!strikes.length) {
+            return interaction.reply({ content: `✅ ${member.tag} has no strike history.`, ephemeral: true });
         }
-
-        const embed = new EmbedBuilder()
-            .setTitle(`📋 Staff Discipline Record - ${member.tag}`)
-            .setColor('Blue')
-            .setThumbnail(member.displayAvatarURL({ dynamic: true }))
-            .setTimestamp();
 
         const activeStrikes = strikes.filter(s => s.active);
         const removedStrikes = strikes.filter(s => !s.active);
 
-        // ===== ACTIVE STRIKES =====
-        if (activeStrikes.length > 0) {
-            const activeText = activeStrikes.map(s =>
+        const embed = new EmbedBuilder()
+            .setTitle('📋 Staff Discipline Record')
+            .setColor('Blue')
+            .setThumbnail(member.displayAvatarURL({ dynamic: true }))
+            .addFields({ name: '👤 Staff Member', value: `${member.tag} (<@${member.id}>)`, inline: false })
+            .setTimestamp();
+
+        // Active Strikes
+        if (activeStrikes.length) {
+            const text = activeStrikes.map(s =>
                 `**Strike ${s.strikeNumber}**\n🗒️ Reason: ${s.reason}\n📅 Date: ${s.date}`
             ).join('\n\n');
 
-            chunkText(activeText).forEach((chunk, i) => {
-                embed.addFields({
-                    name: i === 0 ? '🟥 Active Strikes' : '🟥 Active Strikes (cont.)',
-                    value: chunk,
-                    inline: false
-                });
+            chunkText(text).forEach((chunk, i) => {
+                embed.addFields({ name: i === 0 ? '🟥 Active Strikes' : '🟥 Active Strikes (cont.)', value: chunk, inline: false });
             });
         } else {
             embed.addFields({ name: '🟥 Active Strikes', value: 'None', inline: false });
         }
 
-        // ===== REMOVED STRIKES =====
-        if (removedStrikes.length > 0) {
-            const removedText = removedStrikes.map(s =>
+        // Removed Strikes
+        if (removedStrikes.length) {
+            const text = removedStrikes.map(s =>
                 `**Strike ${s.strikeNumber} (Removed)**\n🗒️ Original Reason: ${s.reason}\n🗑️ Removed By: <@${s.removedBy}>\n📅 Removed On: ${s.removedDate}\n📝 Removal Reason: ${s.removalReason}`
             ).join('\n\n');
 
-            chunkText(removedText).forEach((chunk, i) => {
-                embed.addFields({
-                    name: i === 0 ? '🟨 Removed Strikes' : '🟨 Removed Strikes (cont.)',
-                    value: chunk,
-                    inline: false
-                });
+            chunkText(text).forEach((chunk, i) => {
+                embed.addFields({ name: i === 0 ? '🟨 Removed Strikes' : '🟨 Removed Strikes (cont.)', value: chunk, inline: false });
             });
         }
 
-        await interaction.editReply({ embeds: [embed] });
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 };
