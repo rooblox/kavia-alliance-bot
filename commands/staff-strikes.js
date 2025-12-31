@@ -4,6 +4,7 @@ const path = require('path');
 
 const DATA_FILE = path.join(__dirname, '../staffDiscipline.json');
 
+// Load JSON data
 function loadData() {
     if (!fs.existsSync(DATA_FILE)) return {};
     return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
@@ -52,8 +53,7 @@ module.exports = {
         }
 
         const activeStrikes = strikes.filter(s => s.active);
-        const removedStrikes = strikes.filter(s => !s.active && s.strikeNumber !== 'TERMINATION');
-        const terminations = strikes.filter(s => s.strikeNumber === 'TERMINATION');
+        const removedStrikes = strikes.filter(s => !s.active);
 
         const embed = new EmbedBuilder()
             .setTitle('📋 Staff Discipline Record')
@@ -66,7 +66,7 @@ module.exports = {
             })
             .setTimestamp();
 
-        /* ===== ACTIVE STRIKES ===== */
+        // ===== ACTIVE STRIKES =====
         if (activeStrikes.length > 0) {
             const activeText = activeStrikes.map(s =>
                 `**Strike ${s.strikeNumber}**\n🗒️ Reason: ${s.reason}\n📅 Date: ${s.date}`
@@ -87,7 +87,7 @@ module.exports = {
             });
         }
 
-        /* ===== REMOVED STRIKES ===== */
+        // ===== REMOVED STRIKES =====
         if (removedStrikes.length > 0) {
             const removedText = removedStrikes.map(s =>
                 `**Strike ${s.strikeNumber} (Removed)**\n🗒️ Original Reason: ${s.reason}\n🗑️ Removed By: <@${s.removedBy}>\n📅 Removed On: ${s.removedDate}\n📝 Removal Reason: ${s.removalReason}`
@@ -96,21 +96,6 @@ module.exports = {
             chunkText(removedText).forEach((chunk, index) => {
                 embed.addFields({
                     name: index === 0 ? '🟨 Removed Strikes' : '🟨 Removed Strikes (cont.)',
-                    value: chunk,
-                    inline: false
-                });
-            });
-        }
-
-        /* ===== TERMINATIONS ===== */
-        if (terminations.length > 0) {
-            const termText = terminations.map(s =>
-                `**Termination**\n🗒️ Reason: ${s.reason}\n📅 Date: ${s.date}\n⚠️ Terminated By: <@${s.terminatedBy}>`
-            ).join('\n\n');
-
-            chunkText(termText).forEach((chunk, index) => {
-                embed.addFields({
-                    name: index === 0 ? '❌ Terminations' : '❌ Terminations (cont.)',
                     value: chunk,
                     inline: false
                 });

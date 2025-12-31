@@ -7,11 +7,13 @@ const DATA_FILE = path.join(__dirname, '../staffDiscipline.json');
 const APPEAL_LINK = 'https://docs.google.com/forms/d/e/1FAIpQLSc3NkUHM6R25jl5MKuBBoBLxEO4E_2_caMXlO9BQsLEs3segg/viewform';
 const LOG_CHANNEL_ID = '1451561306082775081';
 
+// Load JSON data
 function loadData() {
     if (!fs.existsSync(DATA_FILE)) return {};
     return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 }
 
+// Save JSON data
 function saveData(data) {
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 4));
 }
@@ -50,7 +52,6 @@ module.exports = {
         const reason = interaction.options.getString('reason');
         let strikeNumber = interaction.options.getInteger('strike_number');
 
-        // Load data from file
         const data = loadData();
         if (!data[member.id]) data[member.id] = [];
 
@@ -70,7 +71,7 @@ module.exports = {
             data[member.id].push(strike);
             saveData(data);
 
-            // 🔔 LOG
+            // 🔔 Log to channel
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
                     .setTitle('📌 Staff Discipline Log')
@@ -82,31 +83,17 @@ module.exports = {
                         { name: 'Date', value: new Date().toLocaleString(), inline: false }
                     )
                     .setColor('Red');
+
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            // ✅ DM the user
+            // DM the member
             try {
-                await member.send({
-                    embeds: [
-                        new EmbedBuilder()
-                            .setTitle('📌 New Strike Added')
-                            .setColor('Red')
-                            .setDescription(`Hello <@${member.id}>,\n\nA **new strike** has been added to your record.`)
-                            .addFields(
-                                { name: 'Strike Number', value: `${strikeNumber}`, inline: false },
-                                { name: 'Reason', value: reason, inline: false },
-                                { name: 'Staff', value: interaction.user.tag, inline: false },
-                                { name: 'Date', value: new Date().toLocaleString(), inline: false }
-                            )
-                            .setTimestamp()
-                    ]
-                });
+                await sendStrikeNotice(client, member.id, strikeNumber, reason);
             } catch (err) {
-                console.error('Failed to DM user on add strike:', err);
+                console.error('sendStrikeNotice failed:', err);
             }
 
-            await sendStrikeNotice(client, member.id, strikeNumber, reason);
             return interaction.editReply(`✅ Strike ${strikeNumber} added to ${member.tag}`);
         }
 
@@ -123,7 +110,6 @@ module.exports = {
             strike.removalReason = reason;
             saveData(data);
 
-            // 🔔 LOG
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
                     .setTitle('📌 Staff Discipline Log')
@@ -135,10 +121,11 @@ module.exports = {
                         { name: 'Date', value: new Date().toLocaleString(), inline: false }
                     )
                     .setColor('Orange');
+
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            // ✅ DM FORMAT LEFT UNTOUCHED
+            // DM the member
             try {
                 await member.send({
                     embeds: [
@@ -147,15 +134,15 @@ module.exports = {
                             .setColor('Green')
                             .setDescription(`Hello <@${member.id}>,\n\nA strike has been **removed** from your record.`)
                             .addFields(
-                                { name: 'Strike Number', value: `${strikeNumber}`, inline: false },
-                                { name: 'Reason', value: reason, inline: false },
-                                { name: 'Removed By', value: interaction.user.tag, inline: false },
-                                { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                                { name: 'Strike Number', value: `${strikeNumber}` },
+                                { name: 'Removed By', value: interaction.user.tag },
+                                { name: 'Reason', value: reason },
+                                { name: 'Date', value: new Date().toLocaleString() }
                             )
                     ]
                 });
             } catch (err) {
-                console.error('Failed to DM user on remove strike:', err);
+                console.error('Failed to DM user on strike removal:', err);
             }
 
             return interaction.editReply(`✅ Strike ${strikeNumber} removed from ${member.tag}`);
@@ -163,17 +150,6 @@ module.exports = {
 
         // ===== TERMINATE =====
         if (action === 'terminate') {
-            const strike = {
-                strikeNumber: 'TERMINATION',
-                reason,
-                active: false,
-                terminatedBy: interaction.user.id,
-                date: new Date().toLocaleString()
-            };
-            data[member.id].push(strike);
-            saveData(data);
-
-            // 🔔 LOG
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
                     .setTitle('📌 Staff Discipline Log')
@@ -185,10 +161,11 @@ module.exports = {
                         { name: 'Date', value: new Date().toLocaleString(), inline: false }
                     )
                     .setColor('DarkRed');
+
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            // ✅ DM FORMAT LEFT UNTOUCHED
+            // DM the member
             try {
                 await member.send({
                     embeds: [
@@ -202,7 +179,6 @@ module.exports = {
                                 name: 'Appeal',
                                 value: `[Submit an appeal here](${APPEAL_LINK})`
                             })
-                            .setTimestamp()
                     ]
                 });
             } catch (err) {
