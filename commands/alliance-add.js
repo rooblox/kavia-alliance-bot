@@ -5,6 +5,8 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('alliance-add')
         .setDescription('Add a new alliance')
+
+        // ✅ REQUIRED OPTIONS FIRST
         .addStringOption(option =>
             option.setName('group_name')
                 .setDescription('Name of the alliance group')
@@ -18,6 +20,17 @@ module.exports = {
                 .setDescription('Their reps, mention them separated by space')
                 .setRequired(true))
         .addStringOption(option =>
+            option.setName('section')
+                .setDescription('Section of the alliance')
+                .setRequired(true)
+                .addChoices(
+                    { name: 'Restaurants', value: 'Restaurants' },
+                    { name: 'Cafes', value: 'Cafes' },
+                    { name: 'Others', value: 'Others' }
+                ))
+
+        // ✅ OPTIONAL OPTIONS AFTER REQUIRED
+        .addStringOption(option =>
             option.setName('discord_link')
                 .setDescription('Discord link of the alliance'))
         .addStringOption(option =>
@@ -29,16 +42,7 @@ module.exports = {
         .addChannelOption(option =>
             option.setName('welcome_channel')
                 .setDescription('Channel to send the formatted welcome message')
-                .addChannelTypes(ChannelType.GuildText))
-        .addStringOption(option =>
-            option.setName('section')
-                .setDescription('Section of the alliance')
-                .setRequired(true)
-                .addChoices(
-                    { name: 'Restaurants', value: 'Restaurants' },
-                    { name: 'Cafes', value: 'Cafes' },
-                    { name: 'Others', value: 'Others' }
-                )),
+                .addChannelTypes(ChannelType.GuildText)),
 
     async execute(interaction) {
         await interaction.deferReply({ flags: 64 }); // ephemeral
@@ -47,11 +51,11 @@ module.exports = {
             const groupName = interaction.options.getString('group_name');
             const ourReps = interaction.options.getString('our_reps');
             const theirReps = interaction.options.getString('their_reps');
+            const section = interaction.options.getString('section'); // NEW
             const discordLink = interaction.options.getString('discord_link') || 'N/A';
             const robloxLink = interaction.options.getString('roblox_link') || 'N/A';
             const repRole = interaction.options.getRole('rep_role');
             const welcomeChannel = interaction.options.getChannel('welcome_channel');
-            const section = interaction.options.getString('section'); // NEW
 
             const guild = interaction.guild;
             if (!guild) {
@@ -68,7 +72,7 @@ module.exports = {
                     { name: 'Discord Link', value: discordLink },
                     { name: 'Roblox Link', value: robloxLink },
                     { name: 'Rep Role', value: repRole ? `<@&${repRole.id}>` : 'None' },
-                    { name: 'Section', value: section } // NEW
+                    { name: 'Section', value: section }
                 )
                 .setTimestamp();
 
@@ -113,7 +117,7 @@ We’re so excited to be working together and building a strong relationship.
                 robloxLink,
                 repRoleId: repRole?.id || null,
                 welcomeChannelId: welcomeChannel?.id || null,
-                section, // NEW
+                section,
                 addedAt: Date.now()
             });
             saveAlliances(alliances);
