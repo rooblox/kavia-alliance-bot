@@ -50,6 +50,7 @@ module.exports = {
         const reason = interaction.options.getString('reason');
         let strikeNumber = interaction.options.getInteger('strike_number');
 
+        // ✅ Load JSON file like alliance list
         const data = loadData();
         if (!data[member.id]) data[member.id] = [];
 
@@ -58,18 +59,15 @@ module.exports = {
         // ===== ADD STRIKE =====
         if (action === 'add') {
             strikeNumber = data[member.id].filter(s => s.active).length + 1;
-
             const strike = {
                 strikeNumber,
                 reason,
                 active: true,
                 date: new Date().toLocaleString()
             };
-
             data[member.id].push(strike);
-            saveData(data); // ✅ Save to JSON immediately
+            saveData(data); // ✅ Save to file
 
-            // 🔔 LOG
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
                     .setTitle('📌 Staff Discipline Log')
@@ -81,36 +79,25 @@ module.exports = {
                         { name: 'Date', value: new Date().toLocaleString(), inline: false }
                     )
                     .setColor('Red');
-
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            // ✅ DM
-            try {
-                await sendStrikeNotice(client, member.id, strikeNumber, reason);
-            } catch (err) {
-                console.error('sendStrikeNotice failed:', err);
-            }
-
+            await sendStrikeNotice(client, member.id, strikeNumber, reason);
             return interaction.editReply(`✅ Strike ${strikeNumber} added to ${member.tag}`);
         }
 
         // ===== REMOVE STRIKE =====
         if (action === 'remove') {
-            if (!strikeNumber) {
-                return interaction.editReply('❌ Please provide a strike number to remove.');
-            }
+            if (!strikeNumber) return interaction.editReply('❌ Please provide a strike number to remove.');
 
             const strike = data[member.id].find(s => s.strikeNumber === strikeNumber && s.active);
-            if (!strike) {
-                return interaction.editReply('❌ Strike not found or already removed.');
-            }
+            if (!strike) return interaction.editReply('❌ Strike not found or already removed.');
 
             strike.active = false;
             strike.removedBy = interaction.user.id;
             strike.removedDate = new Date().toLocaleString();
             strike.removalReason = reason;
-            saveData(data); // ✅ Save to JSON
+            saveData(data); // ✅ Save to file
 
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
@@ -123,7 +110,6 @@ module.exports = {
                         { name: 'Date', value: new Date().toLocaleString(), inline: false }
                     )
                     .setColor('Orange');
-
                 logChannel.send({ embeds: [logEmbed] });
             }
 
@@ -143,9 +129,7 @@ module.exports = {
                             )
                     ]
                 });
-            } catch (err) {
-                console.error('Failed to DM user on strike removal:', err);
-            }
+            } catch {}
 
             return interaction.editReply(`✅ Strike ${strikeNumber} removed from ${member.tag}`);
         }
@@ -163,29 +147,20 @@ module.exports = {
                         { name: 'Date', value: new Date().toLocaleString(), inline: false }
                     )
                     .setColor('DarkRed');
-
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            // ✅ DM
             try {
                 await member.send({
                     embeds: [
                         new EmbedBuilder()
                             .setTitle('⚠️ Termination Notice')
                             .setColor('DarkRed')
-                            .setDescription(
-                                `Greetings <@${member.id}>,\n\nYou have been **terminated** from Kavià Cafe.\n\n**Reason:** ${reason}`
-                            )
-                            .addFields({
-                                name: 'Appeal',
-                                value: `[Submit an appeal here](${APPEAL_LINK})`
-                            })
+                            .setDescription(`Greetings <@${member.id}>,\n\nYou have been **terminated** from Kavià Cafe.\n\n**Reason:** ${reason}`)
+                            .addFields({ name: 'Appeal', value: `[Submit an appeal here](${APPEAL_LINK})` })
                     ]
                 });
-            } catch (err) {
-                console.error('Failed to DM user on termination:', err);
-            }
+            } catch {}
 
             return interaction.editReply(`✅ ${member.tag} has been terminated.`);
         }
