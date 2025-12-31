@@ -2,8 +2,8 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { loadAlliances } = require('../utils/allianceStorage');
 const fs = require('fs');
 
+const channelId = '1454552983688843305'; // channel to post
 const messageIdFile = './alliancesMessage.json';
-const channelId = '1454552983688843305'; // Production channel
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -15,7 +15,6 @@ module.exports = {
 
         try {
             const alliances = loadAlliances();
-
             if (!alliances.length) {
                 return await interaction.editReply('No alliances found.');
             }
@@ -25,18 +24,31 @@ module.exports = {
                 .setColor('Blue')
                 .setTimestamp();
 
-            alliances.forEach(a => {
-                embed.addFields({
-                    name: a.groupName,
-                    value: `**Our Reps:** ${a.ourReps}\n**Their Reps:** ${a.theirReps}\n**Discord:** ${a.discordLink}\n**Roblox:** ${a.robloxLink}\n**Rep Role:** ${a.repRoleId ? `<@&${a.repRoleId}>` : 'None'}`,
-                    inline: false
+            const sections = ['Restaurants', 'Cafes', 'Others'];
+
+            sections.forEach(sectionName => {
+                const sectionAlliances = alliances.filter(a => a.section === sectionName);
+                if (!sectionAlliances.length) return;
+
+                embed.addFields({ name: `${sectionName}:`, value: '\u200B' });
+
+                sectionAlliances.forEach(a => {
+                    embed.addFields({
+                        name: a.groupName,
+                        value:
+                            `**Our Reps:** ${a.ourReps}\n` +
+                            `**Their Reps:** ${a.theirReps}\n` +
+                            `**Discord:** ${a.discordLink}\n` +
+                            `**Roblox:** ${a.robloxLink}\n` +
+                            `**Rep Role:** ${a.repRoleId ? `<@&${a.repRoleId}>` : 'None'}`,
+                        inline: false
+                    });
                 });
             });
 
             const channel = await client.channels.fetch(channelId);
             if (!channel) return interaction.editReply('Channel not found.');
 
-            // Read existing message ID or initialize
             let messageIdData = { messageId: null };
             if (fs.existsSync(messageIdFile)) {
                 messageIdData = JSON.parse(fs.readFileSync(messageIdFile));
@@ -45,17 +57,14 @@ module.exports = {
             let message;
             if (messageIdData.messageId) {
                 try {
-                    // Try to fetch existing message and update it
                     message = await channel.messages.fetch(messageIdData.messageId);
                     await message.edit({ embeds: [embed] });
                 } catch {
-                    // If message not found, send a new one
                     message = await channel.send({ embeds: [embed] });
                     messageIdData.messageId = message.id;
                     fs.writeFileSync(messageIdFile, JSON.stringify(messageIdData, null, 2));
                 }
             } else {
-                // First-time posting
                 message = await channel.send({ embeds: [embed] });
                 messageIdData.messageId = message.id;
                 fs.writeFileSync(messageIdFile, JSON.stringify(messageIdData, null, 2));

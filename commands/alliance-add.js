@@ -29,11 +29,18 @@ module.exports = {
         .addChannelOption(option =>
             option.setName('welcome_channel')
                 .setDescription('Channel to send the formatted welcome message')
-                .addChannelTypes(ChannelType.GuildText)),
+                .addChannelTypes(ChannelType.GuildText))
+        .addStringOption(option =>
+            option.setName('section')
+                .setDescription('Section of the alliance')
+                .setRequired(true)
+                .addChoices(
+                    { name: 'Restaurants', value: 'Restaurants' },
+                    { name: 'Cafes', value: 'Cafes' },
+                    { name: 'Others', value: 'Others' }
+                )),
 
     async execute(interaction) {
-
-        // ✅ MUST be first awaited call
         await interaction.deferReply({ flags: 64 }); // ephemeral
 
         try {
@@ -44,8 +51,8 @@ module.exports = {
             const robloxLink = interaction.options.getString('roblox_link') || 'N/A';
             const repRole = interaction.options.getRole('rep_role');
             const welcomeChannel = interaction.options.getChannel('welcome_channel');
+            const section = interaction.options.getString('section'); // NEW
 
-            // ✅ Use interaction.guild (NOT cache.first)
             const guild = interaction.guild;
             if (!guild) {
                 return await interaction.editReply('❌ Guild not found.');
@@ -60,7 +67,8 @@ module.exports = {
                     { name: 'Their Reps', value: theirReps },
                     { name: 'Discord Link', value: discordLink },
                     { name: 'Roblox Link', value: robloxLink },
-                    { name: 'Rep Role', value: repRole ? `<@&${repRole.id}>` : 'None' }
+                    { name: 'Rep Role', value: repRole ? `<@&${repRole.id}>` : 'None' },
+                    { name: 'Section', value: section } // NEW
                 )
                 .setTimestamp();
 
@@ -74,7 +82,6 @@ module.exports = {
             // --- WELCOME MESSAGE ---
             if (welcomeChannel) {
                 const repsArray = ourReps.split(' ');
-
                 const welcomeMessage = `:tada: **Welcome New Alliance! | Kavi Café x ${groupName}** :tada:
 
 We’re thrilled to officially welcome your community into an alliance with Kavi Café! :star2:
@@ -106,16 +113,14 @@ We’re so excited to be working together and building a strong relationship.
                 robloxLink,
                 repRoleId: repRole?.id || null,
                 welcomeChannelId: welcomeChannel?.id || null,
+                section, // NEW
                 addedAt: Date.now()
             });
             saveAlliances(alliances);
 
-            // ✅ FINAL RESPONSE
-            await interaction.editReply(`✅ Alliance **${groupName}** successfully added!`);
-
+            await interaction.editReply(`✅ Alliance **${groupName}** successfully added under **${section}**!`);
         } catch (err) {
             console.error('Error executing alliance-add:', err);
-
             if (interaction.deferred || interaction.replied) {
                 await interaction.editReply('❌ There was an error executing this command.');
             }
