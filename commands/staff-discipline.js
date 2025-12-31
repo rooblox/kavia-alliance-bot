@@ -1,19 +1,16 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { sendStrikeNotice } = require('../events/interactionCreate.js');
 
 const DATA_FILE = path.join(__dirname, '../staffDiscipline.json');
 const APPEAL_LINK = 'https://docs.google.com/forms/d/e/1FAIpQLSc3NkUHM6R25jl5MKuBBoBLxEO4E_2_caMXlO9BQsLEs3segg/viewform';
 const LOG_CHANNEL_ID = '1451561306082775081';
 
-// Load data from JSON
 function loadData() {
     if (!fs.existsSync(DATA_FILE)) return {};
     return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 }
 
-// Save data to JSON
 function saveData(data) {
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 4));
 }
@@ -69,7 +66,7 @@ module.exports = {
             };
 
             data[member.id].push(strike);
-            saveData(data); // <-- save to file
+            saveData(data);
 
             // 🔔 LOG
             if (logChannel) {
@@ -80,30 +77,34 @@ module.exports = {
                         { name: 'Action', value: 'Add Strike', inline: false },
                         { name: 'Reason', value: reason, inline: false },
                         { name: 'Staff', value: `<@${interaction.user.id}>`, inline: false },
-                        { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                        { name: 'Date', value: strike.date, inline: false }
                     )
                     .setColor('Red');
+
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            // ✅ Send DM
+            // ✅ Send DM in your requested format
             try {
                 await member.send({
-                    embeds: [
-                        new EmbedBuilder()
-                            .setTitle('⚠️ New Strike Issued')
-                            .setColor('Red')
-                            .setDescription(`Hello <@${member.id}>,\n\nYou have received a **new strike**.`)
-                            .addFields(
-                                { name: 'Strike Number', value: `${strikeNumber}`, inline: false },
-                                { name: 'Reason', value: reason, inline: false },
-                                { name: 'Issued By', value: interaction.user.tag, inline: false },
-                                { name: 'Date', value: new Date().toLocaleString(), inline: false }
-                            )
-                    ]
+                    content:
+`⚠️ New Strike Added
+Hello <@${member.id}>, you have received a new strike.
+
+Strike Number
+#${strikeNumber}
+
+Reason
+${reason}
+
+Date
+${strike.date}
+
+Appeal
+${APPEAL_LINK}`
                 });
             } catch (err) {
-                console.error('Failed to DM user:', err);
+                console.error('Failed to send DM:', err);
             }
 
             return interaction.editReply(`✅ Strike ${strikeNumber} added to ${member.tag}`);
@@ -120,7 +121,7 @@ module.exports = {
             strike.removedBy = interaction.user.id;
             strike.removedDate = new Date().toLocaleString();
             strike.removalReason = reason;
-            saveData(data); // <-- save to file
+            saveData(data);
 
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
@@ -130,30 +131,31 @@ module.exports = {
                         { name: 'Action', value: 'Remove Strike', inline: false },
                         { name: 'Reason', value: reason, inline: false },
                         { name: 'Staff', value: `<@${interaction.user.id}>`, inline: false },
-                        { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                        { name: 'Date', value: strike.removedDate, inline: false }
                     )
                     .setColor('Orange');
+
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            // ✅ Send DM
+            // DM the user in similar style
             try {
                 await member.send({
-                    embeds: [
-                        new EmbedBuilder()
-                            .setTitle('✅ Strike Removed')
-                            .setColor('Green')
-                            .setDescription(`Hello <@${member.id}>,\n\nA strike has been **removed** from your record.`)
-                            .addFields(
-                                { name: 'Strike Number', value: `${strikeNumber}`, inline: false },
-                                { name: 'Removed By', value: interaction.user.tag, inline: false },
-                                { name: 'Reason', value: reason, inline: false },
-                                { name: 'Date', value: new Date().toLocaleString(), inline: false }
-                            )
-                    ]
+                    content:
+`✅ Strike Removed
+Hello <@${member.id}>, a strike has been removed from your record.
+
+Strike Number
+#${strikeNumber}
+
+Reason
+${reason}
+
+Date
+${strike.removedDate}`
                 });
             } catch (err) {
-                console.error('Failed to DM user:', err);
+                console.error('Failed to send DM:', err);
             }
 
             return interaction.editReply(`✅ Strike ${strikeNumber} removed from ${member.tag}`);
@@ -161,6 +163,8 @@ module.exports = {
 
         // ===== TERMINATE =====
         if (action === 'terminate') {
+            const dateNow = new Date().toLocaleString();
+
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
                     .setTitle('📌 Staff Discipline Log')
@@ -169,27 +173,31 @@ module.exports = {
                         { name: 'Action', value: 'Termination', inline: false },
                         { name: 'Reason', value: reason, inline: false },
                         { name: 'Staff', value: `<@${interaction.user.id}>`, inline: false },
-                        { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                        { name: 'Date', value: dateNow, inline: false }
                     )
                     .setColor('DarkRed');
+
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            // ✅ Send DM
+            // DM user
             try {
                 await member.send({
-                    embeds: [
-                        new EmbedBuilder()
-                            .setTitle('⚠️ Termination Notice')
-                            .setColor('DarkRed')
-                            .setDescription(`Greetings <@${member.id}>,\n\nYou have been **terminated** from Kavià Cafe.\n\n**Reason:** ${reason}`)
-                            .addFields(
-                                { name: 'Appeal', value: `[Submit an appeal here](${APPEAL_LINK})`, inline: false }
-                            )
-                    ]
+                    content:
+`⚠️ Termination Notice
+Hello <@${member.id}>, you have been **terminated** from Kavià Cafe.
+
+Reason
+${reason}
+
+Date
+${dateNow}
+
+Appeal
+${APPEAL_LINK}`
                 });
             } catch (err) {
-                console.error('Failed to DM user:', err);
+                console.error('Failed to send DM:', err);
             }
 
             return interaction.editReply(`✅ ${member.tag} has been terminated.`);
