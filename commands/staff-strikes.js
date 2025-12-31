@@ -4,13 +4,13 @@ const path = require('path');
 
 const DATA_FILE = path.join(__dirname, '../staffDiscipline.json');
 
-// Load JSON data
+// Helper to load data
 function loadData() {
     if (!fs.existsSync(DATA_FILE)) return {};
     return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 }
 
-// Utility: split long text into chunks <= maxLength
+// Utility to split long text into chunks <= maxLength for embeds
 function chunkText(text, maxLength = 1024) {
     const chunks = [];
     let current = '';
@@ -23,9 +23,7 @@ function chunkText(text, maxLength = 1024) {
         current += line + '\n';
     }
 
-    if (current.trim().length > 0) {
-        chunks.push(current);
-    }
+    if (current.trim().length > 0) chunks.push(current);
 
     return chunks;
 }
@@ -80,11 +78,7 @@ module.exports = {
                 });
             });
         } else {
-            embed.addFields({
-                name: '🟥 Active Strikes',
-                value: 'None',
-                inline: false
-            });
+            embed.addFields({ name: '🟥 Active Strikes', value: 'None', inline: false });
         }
 
         // ===== REMOVED STRIKES =====
@@ -102,9 +96,6 @@ module.exports = {
             });
         }
 
-        await interaction.reply({
-            embeds: [embed],
-            ephemeral: true
-        });
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 };
