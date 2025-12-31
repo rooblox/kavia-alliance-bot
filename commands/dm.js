@@ -18,9 +18,10 @@ module.exports = {
     async execute(interaction, client) {
         const user = interaction.options.getUser('member');
         const messageContent = interaction.options.getString('message');
-        const guildId = '1454555005725048894'; // Replace with your production server ID
+        const guildId = '1454555005725048894'; // Your production server ID
+        const logChannelId = '1451553296467755048'; // dm-logs channel ID
 
-        // Prevent spamming multiple DMs
+        // Prevent multiple simultaneous DMs
         if (sendingDMs.has(user.id)) {
             return interaction.reply({ content: `⚠️ DM already being sent to ${user.tag}`, ephemeral: true });
         }
@@ -41,15 +42,10 @@ module.exports = {
                 await interaction.reply({ content: `✅ DM sent to ${user.tag}`, ephemeral: true });
             }
 
-            // Fetch guild and log channel properly
-            const guild = await client.guilds.fetch(guildId);
-            if (!guild) return console.error('Guild not found');
-
-            const channels = await guild.channels.fetch();
-            const logChannel = channels.find(ch => ch.name === 'dm-logs');
+            // Fetch the log channel by ID (reliable in production)
+            const logChannel = await client.channels.fetch(logChannelId);
             if (!logChannel) return console.error('Log channel not found');
 
-            // Create log embed
             const logEmbed = new EmbedBuilder()
                 .setTitle('📩 Staff DM Sent')
                 .addFields(
