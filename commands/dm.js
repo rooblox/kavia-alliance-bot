@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+
 const sendingDMs = new Set();
 
 module.exports = {
@@ -17,12 +18,12 @@ module.exports = {
     async execute(interaction, client) {
         const user = interaction.options.getUser('member');
         const messageContent = interaction.options.getString('message');
-        const guildId = '1454555005725048894'; // Replace with your server ID
+        const guildId = '1454555005725048894'; // Replace with your production server ID
 
+        // Prevent spamming multiple DMs
         if (sendingDMs.has(user.id)) {
             return interaction.reply({ content: `⚠️ DM already being sent to ${user.tag}`, ephemeral: true });
         }
-
         sendingDMs.add(user.id);
 
         const dmEmbed = new EmbedBuilder()
@@ -32,19 +33,23 @@ module.exports = {
             .setTimestamp();
 
         try {
+            // Send DM to user
             await user.send({ embeds: [dmEmbed] });
 
+            // Confirm to the staff member
             if (!interaction.replied) {
                 await interaction.reply({ content: `✅ DM sent to ${user.tag}`, ephemeral: true });
             }
 
-            // Logging to dm-logs
-            const guild = client.guilds.cache.get(guildId);
+            // Fetch guild and log channel properly
+            const guild = await client.guilds.fetch(guildId);
             if (!guild) return console.error('Guild not found');
 
-            const logChannel = guild.channels.cache.find(ch => ch.name === 'dm-logs');
+            const channels = await guild.channels.fetch();
+            const logChannel = channels.find(ch => ch.name === 'dm-logs');
             if (!logChannel) return console.error('Log channel not found');
 
+            // Create log embed
             const logEmbed = new EmbedBuilder()
                 .setTitle('📩 Staff DM Sent')
                 .addFields(
@@ -59,7 +64,7 @@ module.exports = {
             await logChannel.send({ embeds: [logEmbed] });
 
         } catch (err) {
-            console.error('Error sending DM:', err);
+            console.error('Error sending DM or logging:', err);
 
             if (!interaction.replied) {
                 await interaction.reply({
