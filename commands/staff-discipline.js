@@ -7,7 +7,6 @@ const DATA_FILE = path.join(__dirname, '../staffDiscipline.json');
 const APPEAL_LINK = 'https://docs.google.com/forms/d/e/1FAIpQLSc3NkUHM6R25jl5MKuBBoBLxEO4E_2_caMXlO9BQsLEs3segg/viewform';
 const LOG_CHANNEL_ID = '1451561306082775081';
 
-// Helper functions to load/save JSON
 function loadData() {
     if (!fs.existsSync(DATA_FILE)) return {};
     return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
@@ -51,9 +50,6 @@ module.exports = {
         const reason = interaction.options.getString('reason');
         let strikeNumber = interaction.options.getInteger('strike_number');
 
-        // ===============================
-        // Load strikes from JSON file
-        // ===============================
         const data = loadData();
         if (!data[member.id]) data[member.id] = [];
 
@@ -71,7 +67,7 @@ module.exports = {
             };
 
             data[member.id].push(strike);
-            saveData(data); // <-- Save to JSON so /staff-strikes works
+            saveData(data); // ✅ Save to JSON immediately
 
             // 🔔 LOG
             if (logChannel) {
@@ -89,7 +85,7 @@ module.exports = {
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            // ✅ DM the user
+            // ✅ DM
             try {
                 await sendStrikeNotice(client, member.id, strikeNumber, reason);
             } catch (err) {
@@ -114,7 +110,7 @@ module.exports = {
             strike.removedBy = interaction.user.id;
             strike.removedDate = new Date().toLocaleString();
             strike.removalReason = reason;
-            saveData(data); // <-- Save JSON
+            saveData(data); // ✅ Save to JSON
 
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
@@ -131,7 +127,7 @@ module.exports = {
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            // ✅ DM FORMAT LEFT INTACT
+            // ✅ DM
             try {
                 await member.send({
                     embeds: [
@@ -145,10 +141,11 @@ module.exports = {
                                 { name: 'Reason', value: reason },
                                 { name: 'Date', value: new Date().toLocaleString() }
                             )
-                            .setTimestamp()
                     ]
                 });
-            } catch {}
+            } catch (err) {
+                console.error('Failed to DM user on strike removal:', err);
+            }
 
             return interaction.editReply(`✅ Strike ${strikeNumber} removed from ${member.tag}`);
         }
@@ -170,7 +167,7 @@ module.exports = {
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            // ✅ DM FORMAT LEFT INTACT
+            // ✅ DM
             try {
                 await member.send({
                     embeds: [
@@ -184,10 +181,11 @@ module.exports = {
                                 name: 'Appeal',
                                 value: `[Submit an appeal here](${APPEAL_LINK})`
                             })
-                            .setTimestamp()
                     ]
                 });
-            } catch {}
+            } catch (err) {
+                console.error('Failed to DM user on termination:', err);
+            }
 
             return interaction.editReply(`✅ ${member.tag} has been terminated.`);
         }
