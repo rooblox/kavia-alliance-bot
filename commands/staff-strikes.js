@@ -4,12 +4,13 @@ const path = require('path');
 
 const DATA_FILE = path.join(__dirname, '../staffDiscipline.json');
 
+// Load strikes from file
 function loadData() {
     if (!fs.existsSync(DATA_FILE)) return {};
     return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 }
 
-// Utility: split long text into chunks <= maxLength
+// Utility: Split long text into chunks <= maxLength for embeds
 function chunkText(text, maxLength = 1024) {
     const chunks = [];
     let current = '';
@@ -22,10 +23,7 @@ function chunkText(text, maxLength = 1024) {
         current += line + '\n';
     }
 
-    if (current.trim().length > 0) {
-        chunks.push(current);
-    }
-
+    if (current.trim().length > 0) chunks.push(current);
     return chunks;
 }
 
@@ -55,55 +53,44 @@ module.exports = {
         const removedStrikes = strikes.filter(s => !s.active);
 
         const embed = new EmbedBuilder()
-            .setTitle('📋 Staff Discipline Record')
+            .setTitle(`📋 Staff Discipline Record | ${member.tag}`)
             .setColor('Blue')
             .setThumbnail(member.displayAvatarURL({ dynamic: true }))
-            .addFields({
-                name: '👤 Staff Member',
-                value: `${member.tag} (<@${member.id}>)`,
-                inline: false
-            })
-            .setTimestamp();
+            .setTimestamp()
+            .addFields({ name: '👤 Staff Member', value: `${member.tag} (<@${member.id}>)`, inline: false });
 
-        /* ===== ACTIVE STRIKES ===== */
+        // ===== ACTIVE STRIKES =====
         if (activeStrikes.length > 0) {
             const activeText = activeStrikes.map(s =>
-                `**Strike ${s.strikeNumber}**\n🗒️ Reason: ${s.reason}\n📅 Date: ${s.date}`
+                `**Strike ${s.strikeNumber}**\n🗒️ **Reason:** ${s.reason}\n📅 **Date:** ${s.date}`
             ).join('\n\n');
 
-            chunkText(activeText).forEach((chunk, index) => {
+            chunkText(activeText).forEach((chunk, i) => {
                 embed.addFields({
-                    name: index === 0 ? '🟥 Active Strikes' : '🟥 Active Strikes (cont.)',
+                    name: i === 0 ? '🟥 Active Strikes' : '🟥 Active Strikes (cont.)',
                     value: chunk,
                     inline: false
                 });
             });
         } else {
-            embed.addFields({
-                name: '🟥 Active Strikes',
-                value: 'None',
-                inline: false
-            });
+            embed.addFields({ name: '🟥 Active Strikes', value: 'None', inline: false });
         }
 
-        /* ===== REMOVED STRIKES ===== */
+        // ===== REMOVED STRIKES =====
         if (removedStrikes.length > 0) {
             const removedText = removedStrikes.map(s =>
-                `**Strike ${s.strikeNumber} (Removed)**\n🗒️ Original Reason: ${s.reason}\n🗑️ Removed By: <@${s.removedBy}>\n📅 Removed On: ${s.removedDate}\n📝 Removal Reason: ${s.removalReason}`
+                `**Strike ${s.strikeNumber} (Removed)**\n🗒️ **Original Reason:** ${s.reason}\n🗑️ **Removed By:** <@${s.removedBy}>\n📅 **Removed On:** ${s.removedDate}\n📝 **Removal Reason:** ${s.removalReason}`
             ).join('\n\n');
 
-            chunkText(removedText).forEach((chunk, index) => {
+            chunkText(removedText).forEach((chunk, i) => {
                 embed.addFields({
-                    name: index === 0 ? '🟨 Removed Strikes' : '🟨 Removed Strikes (cont.)',
+                    name: i === 0 ? '🟨 Removed Strikes' : '🟨 Removed Strikes (cont.)',
                     value: chunk,
                     inline: false
                 });
             });
         }
 
-        await interaction.reply({
-            embeds: [embed],
-            ephemeral: true
-        });
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 };

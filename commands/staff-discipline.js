@@ -1,17 +1,18 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { sendStrikeNotice } = require('../events/interactionCreate.js');
 
 const DATA_FILE = path.join(__dirname, '../staffDiscipline.json');
 const APPEAL_LINK = 'https://docs.google.com/forms/d/e/1FAIpQLSc3NkUHM6R25jl5MKuBBoBLxEO4E_2_caMXlO9BQsLEs3segg/viewform';
 const LOG_CHANNEL_ID = '1451561306082775081';
 
+// Load strikes from file
 function loadData() {
     if (!fs.existsSync(DATA_FILE)) return {};
     return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 }
 
+// Save strikes to file
 function saveData(data) {
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 4));
 }
@@ -50,6 +51,7 @@ module.exports = {
         const reason = interaction.options.getString('reason');
         let strikeNumber = interaction.options.getInteger('strike_number');
 
+        // Load data from file
         const data = loadData();
         if (!data[member.id]) data[member.id] = [];
 
@@ -69,7 +71,7 @@ module.exports = {
             data[member.id].push(strike);
             saveData(data);
 
-            // 🔔 LOG
+            // Log in channel
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
                     .setTitle('📌 Staff Discipline Log')
@@ -85,27 +87,45 @@ module.exports = {
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            await sendStrikeNotice(client, member.id, strikeNumber, reason);
+            // Send DM
+            try {
+                await member.send({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setTitle('📌 Strike Issued')
+                            .setColor('Red')
+                            .setDescription(`Hello <@${member.id}>,\n\nA **new strike** has been added to your record.`)
+                            .addFields(
+                                { name: 'Strike Number', value: `${strikeNumber}`, inline: false },
+                                { name: 'Reason', value: reason, inline: false },
+                                { name: 'Date', value: new Date().toLocaleString(), inline: false },
+                                { name: 'Staff', value: `${interaction.user.tag}`, inline: false }
+                            )
+                            .setTimestamp()
+                    ]
+                });
+            } catch (err) {
+                console.error('Failed to DM user on add strike:', err);
+            }
+
             return interaction.editReply(`✅ Strike ${strikeNumber} added to ${member.tag}`);
         }
 
         // ===== REMOVE STRIKE =====
         if (action === 'remove') {
-            if (!strikeNumber) {
-                return interaction.editReply('❌ Please provide a strike number to remove.');
-            }
+            if (!strikeNumber) return interaction.editReply('❌ Please provide a strike number to remove.');
 
             const strike = data[member.id].find(s => s.strikeNumber === strikeNumber && s.active);
-            if (!strike) {
-                return interaction.editReply('❌ Strike not found or already removed.');
-            }
+            if (!strike) return interaction.editReply('❌ Strike not found or already removed.');
 
             strike.active = false;
             strike.removedBy = interaction.user.id;
             strike.removedDate = new Date().toLocaleString();
             strike.removalReason = reason;
+
             saveData(data);
 
+            // Log in channel
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
                     .setTitle('📌 Staff Discipline Log')
@@ -121,7 +141,7 @@ module.exports = {
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            // ✅ DM FORMAT LEFT UNTOUCHED
+            // Send DM
             try {
                 await member.send({
                     embeds: [
@@ -130,20 +150,24 @@ module.exports = {
                             .setColor('Green')
                             .setDescription(`Hello <@${member.id}>,\n\nA strike has been **removed** from your record.`)
                             .addFields(
-                                { name: 'Strike Number', value: `${strikeNumber}` },
-                                { name: 'Removed By', value: interaction.user.tag },
-                                { name: 'Reason', value: reason },
-                                { name: 'Date', value: new Date().toLocaleString() }
+                                { name: 'Strike Number', value: `${strikeNumber}`, inline: false },
+                                { name: 'Removed By', value: interaction.user.tag, inline: false },
+                                { name: 'Reason', value: reason, inline: false },
+                                { name: 'Date', value: new Date().toLocaleString(), inline: false }
                             )
+                            .setTimestamp()
                     ]
                 });
-            } catch {}
+            } catch (err) {
+                console.error('Failed to DM user on remove strike:', err);
+            }
 
             return interaction.editReply(`✅ Strike ${strikeNumber} removed from ${member.tag}`);
         }
 
         // ===== TERMINATE =====
         if (action === 'terminate') {
+            // Log in channel
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
                     .setTitle('📌 Staff Discipline Log')
@@ -159,23 +183,24 @@ module.exports = {
                 logChannel.send({ embeds: [logEmbed] });
             }
 
-            // ✅ DM FORMAT LEFT UNTOUCHED
+            // Send DM
             try {
                 await member.send({
                     embeds: [
                         new EmbedBuilder()
                             .setTitle('⚠️ Termination Notice')
                             .setColor('DarkRed')
-                            .setDescription(
-                                `Greetings <@${member.id}>,\n\nYou have been **terminated** from Kavià Cafe.\n\n**Reason:** ${reason}`
-                            )
+                            .setDescription(`Greetings <@${member.id}>,\n\nYou have been **terminated** from Kavià Cafe.\n\n**Reason:** ${reason}`)
                             .addFields({
                                 name: 'Appeal',
                                 value: `[Submit an appeal here](${APPEAL_LINK})`
                             })
+                            .setTimestamp()
                     ]
                 });
-            } catch {}
+            } catch (err) {
+                console.error('Failed to DM user on termination:', err);
+            }
 
             return interaction.editReply(`✅ ${member.tag} has been terminated.`);
         }
