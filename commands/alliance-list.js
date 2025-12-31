@@ -20,24 +20,29 @@ module.exports = {
                 .setColor('Blue')
                 .setTimestamp();
 
-            const sections = ['Restaurants', 'Cafes', 'Others'];
+            const sections = [
+                { name: 'Restaurants', emoji: '🍽️' },
+                { name: 'Cafes', emoji: '☕' },
+                { name: 'Others', emoji: '🏷️' }
+            ];
 
-            sections.forEach(sectionName => {
-                const sectionAlliances = alliances.filter(a => a.section === sectionName);
+            sections.forEach(section => {
+                const sectionAlliances = alliances.filter(a => a.section === section.name);
                 if (!sectionAlliances.length) return;
 
                 // Section header
-                embed.addFields({ name: `${sectionName}:`, value: '\u200B' });
+                embed.addFields({ name: `${section.emoji} ${section.name}`, value: '\u200B' });
 
                 sectionAlliances.forEach(a => {
                     embed.addFields({
-                        name: a.groupName,
+                        name: `✨ **${a.groupName}** ✨`,
                         value:
                             `**Our Reps:** ${a.ourReps}\n` +
                             `**Their Reps:** ${a.theirReps}\n` +
                             `**Discord:** ${a.discordLink}\n` +
                             `**Roblox:** ${a.robloxLink}\n` +
-                            `**Rep Role:** ${a.repRoleId ? `<@&${a.repRoleId}>` : 'None'}`,
+                            `**Rep Role:** ${a.repRoleId ? `<@&${a.repRoleId}>` : 'None'}\n` +
+                            `────────────────────`,
                         inline: false
                     });
                 });
