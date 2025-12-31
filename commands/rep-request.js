@@ -37,6 +37,9 @@ module.exports = {
         const repChannel = guild.channels.cache.find(ch => ch.name === 'rep-request');
         if (!repChannel) return interaction.reply({ content: 'Rep request channel not found.', ephemeral: true });
 
+        // [PR] | Staff Role ID
+        const staffRoleId = '1417981534421520515';
+
         // Build the embed
         const embed = new EmbedBuilder()
             .setTitle('📥 New Rep Request')
@@ -59,8 +62,13 @@ module.exports = {
                 .setStyle(ButtonStyle.Success)
         );
 
-        // Send message with embed + button
-        await repChannel.send({ content: '@PR | Staff Role', embeds: [embed], components: [row] });
+        // Send message with embed + button and ping the role
+        await repChannel.send({
+            content: `<@&${staffRoleId}>`,
+            embeds: [embed],
+            components: [row],
+            allowedMentions: { roles: [staffRoleId] } // ensures the role gets pinged
+        });
 
         // Reply to staff member using command
         await interaction.reply({ content: '✅ Rep request sent!', ephemeral: true });
