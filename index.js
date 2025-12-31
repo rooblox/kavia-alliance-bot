@@ -12,7 +12,17 @@ const client = new Client({
     partials: ['CHANNEL'] // Required for DM events
 });
 
-// Command collection
+// ===============================
+// GLOBAL IN-MEMORY CACHES
+// ===============================
+
+// Staff discipline cache (Railway-safe runtime storage)
+client.staffDisciplineCache = {};
+
+// ===============================
+// COMMAND HANDLER
+// ===============================
+
 client.commands = new Collection();
 
 // Load all commands once
@@ -20,20 +30,29 @@ const commandFiles = fs.readdirSync('./commands').filter(f => f.endsWith('.js'))
 for (const file of commandFiles) {
     const command = require(`./commands/${file}`);
     if (!command.data || !command.execute) continue;
+
     client.commands.set(command.data.name, command);
     console.log(`Loaded command: ${command.data.name}`);
 }
 
-// Load events once
+// ===============================
+// EVENT HANDLER
+// ===============================
+
 const eventFiles = fs.readdirSync('./events').filter(f => f.endsWith('.js'));
 for (const file of eventFiles) {
     const event = require(`./events/${file}`);
+
     if (event.once) {
         client.once(event.name, (...args) => event.execute(...args, client));
     } else {
         client.on(event.name, (...args) => event.execute(...args, client));
     }
 }
+
+// ===============================
+// LOGIN
+// ===============================
 
 client.login(process.env.TOKEN);
 console.log('Bot started successfully!');
