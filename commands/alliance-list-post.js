@@ -1,84 +1,90 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const {
+    SlashCommandBuilder,
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle
+} = require('discord.js');
 const { loadAlliances } = require('../utils/allianceStorage');
-const fs = require('fs');
 
-const channelId = '1454552983688843305'; // channel to post
-const messageIdFile = './alliancesMessage.json';
+const ITEMS_PER_PAGE = 10;
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('alliance-list-post')
-        .setDescription('Post or update the alliance list in the designated channel'),
+        .setDescription('Post the alliance list publicly (paginated)'),    
 
-    async execute(interaction, client) {
+    async execute(interaction) {
         await interaction.deferReply({ ephemeral: true });
 
-        try {
-            const alliances = loadAlliances();
-            if (!alliances.length) {
-                return await interaction.editReply('No alliances found.');
-            }
+        const alliances = loadAlliances();
+        if (!alliances.length) {
+            return interaction.editReply('No alliances found.');
+        }
 
+        let page = 0;
+        const totalPages = Math.ceil(alliances.length / ITEMS_PER_PAGE);
+
+        const buildEmbed = (page) => {
             const embed = new EmbedBuilder()
                 .setTitle('📜 Current Alliances')
                 .setColor('Blue')
+                .setFooter({ text: `Page ${page + 1} / ${totalPages}` })
                 .setTimestamp();
 
-            const sections = [
-                { name: 'Restaurants', emoji: '🍽️' },
-                { name: 'Cafes', emoji: '☕' },
-                { name: 'Others', emoji: '🏷️' }
-            ];
+            const start = page * ITEMS_PER_PAGE;
+            const current = alliances.slice(start, start + ITEMS_PER_PAGE);
 
-            sections.forEach(section => {
-                const sectionAlliances = alliances.filter(a => a.section === section.name);
-                if (!sectionAlliances.length) return;
-
-                embed.addFields({ name: `${section.emoji} ${section.name}`, value: '\u200B' });
-
-                sectionAlliances.forEach(a => {
-                    embed.addFields({
-                        name: `✨ **${a.groupName}** ✨`,
-                        value:
-                            `**Our Reps:** ${a.ourReps}\n` +
-                            `**Their Reps:** ${a.theirReps}\n` +
-                            `**Discord:** ${a.discordLink}\n` +
-                            `**Roblox:** ${a.robloxLink}\n` +
-                            `**Rep Role:** ${a.repRoleId ? `<@&${a.repRoleId}>` : 'None'}\n` +
-                            `────────────────────`,
-                        inline: false
-                    });
+            current.forEach(a => {
+                embed.addFields({
+                    name: `✨ **${a.groupName}**`,
+                    value:
+                        `**Our Reps:** ${a.ourReps}\n` +
+                        `**Their Reps:** ${a.theirReps}\n` +
+                        `**Discord:** ${a.discordLink}\n` +
+                        `**Roblox:** ${a.robloxLink}`,
+                    inline: false
                 });
             });
 
-            const channel = await client.channels.fetch(channelId);
-            if (!channel) return interaction.editReply('Channel not found.');
+            return embed;
+        };
 
-            let messageIdData = { messageId: null };
-            if (fs.existsSync(messageIdFile)) {
-                messageIdData = JSON.parse(fs.readFileSync(messageIdFile));
-            }
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('prev')
+                .setLabel('⬅️')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('next')
+                .setLabel('➡️')
+                .setStyle(ButtonStyle.Secondary)
+        );
 
-            let message;
-            if (messageIdData.messageId) {
-                try {
-                    message = await channel.messages.fetch(messageIdData.messageId);
-                    await message.edit({ embeds: [embed] });
-                } catch {
-                    message = await channel.send({ embeds: [embed] });
-                    messageIdData.messageId = message.id;
-                    fs.writeFileSync(messageIdFile, JSON.stringify(messageIdData, null, 2));
-                }
-            } else {
-                message = await channel.send({ embeds: [embed] });
-                messageIdData.messageId = message.id;
-                fs.writeFileSync(messageIdFile, JSON.stringify(messageIdData, null, 2));
-            }
+        // Send the public message
+        const postedMessage = await interaction.channel.send({
+            embeds: [buildEmbed(page)],
+            components: totalPages > 1 ? [row] : []
+        });
 
-            await interaction.editReply('✅ Alliance list posted/updated successfully!');
-        } catch (err) {
-            console.error('Error posting alliance list:', err);
-            await interaction.editReply('❌ Failed to post/update alliance list.');
-        }
+        await interaction.editReply('✅ Alliance list posted.');
+
+        if (totalPages <= 1) return;
+
+        const collector = postedMessage.createMessageComponentCollector({
+            time: 300000 // 5 minutes
+        });
+
+        collector.on('collect', async i => {
+            if (i.customId === 'next') page++;
+            if (i.customId === 'prev') page--;
+
+            page = Math.max(0, Math.min(page, totalPages - 1));
+
+            await i.update({
+                embeds: [buildEmbed(page)],
+                components: [row]
+            });
+        });
     }
 };
