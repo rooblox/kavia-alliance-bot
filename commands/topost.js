@@ -132,9 +132,25 @@ module.exports = {
                 }
 
                 try {
+                    // Send ping + deadline warning first
                     await channel.send({
-                        content: `<@&${ALLIED_REPS_ROLE_ID}>\n\n${session.message}`,
+                        content: `<@&${ALLIED_REPS_ROLE_ID}>`,
+                        embeds: [new EmbedBuilder()
+                            .setDescription(
+                                `📢 **You have a new post to share in your server!**\n\n` +
+                                `Please copy the message below and post it in your server within **48 hours**.\n\n` +
+                                `Failure to do so without a valid reason may result in a **strike** against your alliance.\n\n` +
+                                `If you have any questions or need an extension, please reach out to a member of **PR Leadership** as soon as possible.`
+                            )
+                            .setColor(0x9B59B6)
+                            .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                            .setTimestamp()],
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
+                    });
+
+                    // Send the raw message on its own so its easy to copy
+                    await channel.send({
+                        content: session.message
                     });
 
                     const key = `${userId}_${alliance.welcomeChannelId}`;
@@ -166,8 +182,15 @@ module.exports = {
                         await channel.send({
                             content: `<@&${ALLIED_REPS_ROLE_ID}>`,
                             embeds: [new EmbedBuilder()
-                                .setDescription(`⏰ <@&${ALLIED_REPS_ROLE_ID}> This is a friendly reminder — please make sure to post the message above in your server! You have **24 hours** remaining before the deadline.`)
-                                .setColor('Yellow')],
+                                .setDescription(
+                                    `⏰ **Friendly Reminder!**\n\n` +
+                                    `You still have a pending post that needs to be shared in your server.\n\n` +
+                                    `You have **24 hours** remaining before the deadline. Please make sure to get this posted as soon as possible to avoid any issues with your alliance standing.\n\n` +
+                                    `If you need assistance or require an extension, please reach out to **PR Leadership** right away.`
+                                )
+                                .setColor('Yellow')
+                                .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                                .setTimestamp()],
                             allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                         });
                     }, 24 * 60 * 60 * 1000);
@@ -204,9 +227,17 @@ module.exports = {
                         }
 
                         await channel.send({
+                            content: `<@&${ALLIED_REPS_ROLE_ID}>`,
                             embeds: [new EmbedBuilder()
-                                .setDescription(`⚠️ <@&${ALLIED_REPS_ROLE_ID}> The 48 hour deadline has passed with no confirmation. PR Leadership has been notified.`)
-                                .setColor('Red')]
+                                .setDescription(
+                                    `⚠️ **Deadline Passed**\n\n` +
+                                    `The 48 hour posting deadline has passed without confirmation. PR Leadership has been notified and this may be reviewed for alliance standing purposes.\n\n` +
+                                    `If you believe this is a mistake or have a valid reason for the delay, please reach out to **PR Leadership** immediately.`
+                                )
+                                .setColor('Red')
+                                .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                                .setTimestamp()],
+                            allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                         });
 
                     }, 48 * 60 * 60 * 1000);
@@ -302,12 +333,10 @@ module.exports = {
         if (message.author.bot) return;
         if (!message.guild) return;
 
-        // Only accept from users with the allied reps role
         const member = await message.guild.members.fetch(message.author.id).catch(() => null);
         if (!member) return;
         if (!member.roles.cache.has(ALLIED_REPS_ROLE_ID)) return;
 
-        // Find matching active topost for this channel
         let matchedKey = null;
         for (const [key, topost] of activeToposts.entries()) {
             if (topost.channelId === message.channel.id && !topost.responded) {
@@ -323,7 +352,6 @@ module.exports = {
 
         await message.react('✅').catch(() => {});
 
-        // Update tracking embed
         if (topost.trackingMessageId) {
             const logChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
             if (logChannel) {
