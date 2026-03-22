@@ -6,6 +6,7 @@ const { connectDB } = require('./db');
 const ALLOWED_ROLE_ID = '1485100238715883720';
 const CLIENT_ID = process.env.CLIENT_ID;
 const LOG_CHANNEL_ID = '1462580398935642144';
+const DISCIPLINE_LOG_CHANNEL_ID = '1456389041770467370';
 const TERMINATED_CATEGORY_ID = '1428837884252786819';
 
 const client = new Client({
@@ -121,18 +122,48 @@ client.on('interactionCreate', async (interaction) => {
         try {
             const parts = interaction.customId.replace('strike_understood_', '').split('_');
             const userId = parts[0];
-            const groupName = parts.slice(1, -1).join(' ');
             const actionLabel = parts[parts.length - 1];
+            const groupName = parts.slice(1, -1).join(' ');
 
             if (interaction.user.id !== userId) {
                 return interaction.reply({ content: '❌ This button is not for you.', ephemeral: true });
             }
 
+            // Track acknowledgement in pending map
+            client._strikePending = client._strikePending || new Map();
+            const key = `${groupName}_${actionLabel}`;
+            if (!client._strikePending.has(key)) {
+                client._strikePending.set(key, { acknowledged: new Set() });
+            }
+            client._strikePending.get(key).acknowledged.add(userId);
+
             await interaction.reply({ content: '✅ Thank you for acknowledging the strike.', ephemeral: true });
 
-            const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
-            if (logChannel) {
-                await logChannel.send({
+            // Update the message buttons to show who acknowledged
+            try {
+                const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+                const oldComponents = interaction.message.components[0]?.components || [];
+                const newButtons = oldComponents.map(btn => {
+                    const btnUserId = btn.customId.replace('strike_understood_', '').split('_')[0];
+                    const acknowledged = client._strikePending.get(key)?.acknowledged.has(btnUserId);
+                    return new ButtonBuilder()
+                        .setCustomId(btn.customId)
+                        .setLabel(acknowledged ? btn.label.replace('✅ I Understand', '✅ Understood') : btn.label)
+                        .setStyle(acknowledged ? ButtonStyle.Success : ButtonStyle.Secondary)
+                        .setDisabled(acknowledged);
+                });
+
+                await interaction.message.edit({
+                    components: [new ActionRowBuilder().addComponents(...newButtons)]
+                });
+            } catch (err) {
+                console.error('Failed to update strike message:', err);
+            }
+
+            // Log
+            const disciplineLogChannel = await client.channels.fetch(DISCIPLINE_LOG_CHANNEL_ID).catch(() => null);
+            if (disciplineLogChannel) {
+                await disciplineLogChannel.send({
                     embeds: [new EmbedBuilder()
                         .setTitle('✅ Strike Acknowledged')
                         .setColor('Orange')
@@ -164,10 +195,38 @@ client.on('interactionCreate', async (interaction) => {
                 return interaction.reply({ content: '❌ This button is not for you.', ephemeral: true });
             }
 
+            // Track acknowledgement
+            client._disciplineAcks = client._disciplineAcks || new Map();
+            if (!client._disciplineAcks.has(groupName)) {
+                client._disciplineAcks.set(groupName, new Set());
+            }
+            client._disciplineAcks.get(groupName).add(userId);
+
             await interaction.reply({
                 content: '✅ Thank you for acknowledging. You will now be removed from the server.',
                 ephemeral: true
             });
+
+            // Update the message to show who acknowledged
+            try {
+                const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+                const oldComponents = interaction.message.components[0]?.components || [];
+                const newButtons = oldComponents.map(btn => {
+                    const btnUserId = btn.customId.replace('discipline_understood_', '').split('_')[0];
+                    const acknowledged = client._disciplineAcks.get(groupName)?.has(btnUserId);
+                    return new ButtonBuilder()
+                        .setCustomId(btn.customId)
+                        .setLabel(acknowledged ? btn.label.replace('✅ I Understand', '✅ Understood') : btn.label)
+                        .setStyle(acknowledged ? ButtonStyle.Success : ButtonStyle.Secondary)
+                        .setDisabled(acknowledged);
+                });
+
+                await interaction.message.edit({
+                    components: [new ActionRowBuilder().addComponents(...newButtons)]
+                });
+            } catch (err) {
+                console.error('Failed to update discipline message:', err);
+            }
 
             const pendingData = client._disciplinePending?.get(groupName);
             if (pendingData) pendingData.pendingKicks.delete(userId);
@@ -224,12 +283,13 @@ client.on('interactionCreate', async (interaction) => {
                     }
                 }
                 client._disciplinePending.delete(groupName);
+                client._disciplineAcks.delete(groupName);
             }
 
             // Log
-            const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
-            if (logChannel) {
-                await logChannel.send({
+            const disciplineLogChannel = await client.channels.fetch(DISCIPLINE_LOG_CHANNEL_ID).catch(() => null);
+            if (disciplineLogChannel) {
+                await disciplineLogChannel.send({
                     embeds: [new EmbedBuilder()
                         .setTitle('✅ Discipline Notice Acknowledged')
                         .setColor('Green')
