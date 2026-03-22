@@ -116,19 +116,52 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    // ── Strike acknowledgement ──
+    if (interaction.customId.startsWith('strike_understood_')) {
+        try {
+            const parts = interaction.customId.replace('strike_understood_', '').split('_');
+            const userId = parts[0];
+            const groupName = parts.slice(1, -1).join(' ');
+            const actionLabel = parts[parts.length - 1];
+
+            if (interaction.user.id !== userId) {
+                return interaction.reply({ content: '❌ This button is not for you.', ephemeral: true });
+            }
+
+            await interaction.reply({ content: '✅ Thank you for acknowledging the strike.', ephemeral: true });
+
+            const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+            if (logChannel) {
+                await logChannel.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('✅ Strike Acknowledged')
+                        .setColor('Orange')
+                        .addFields(
+                            { name: 'User', value: `<@${userId}>`, inline: true },
+                            { name: 'Alliance', value: groupName, inline: true },
+                            { name: 'Strike', value: actionLabel === 'strike1' ? 'Strike 1' : 'Strike 2', inline: true },
+                            { name: 'Acknowledged By', value: interaction.user.tag, inline: true },
+                            { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                        )
+                        .setTimestamp()]
+                });
+            }
+        } catch (err) {
+            console.error('Error handling strike_understood button:', err);
+        }
+        return;
+    }
+
+    // ── Termination/Blacklist acknowledgement ──
     if (interaction.customId.startsWith('discipline_understood_')) {
         try {
             const parts = interaction.customId.replace('discipline_understood_', '').split('_');
             const userId = parts[0];
-            const groupName = parts[1];
-            const actionLabel = parts[2];
+            const actionLabel = parts[parts.length - 1];
+            const groupName = parts.slice(1, -1).join(' ');
 
-            // Only the specific rep whose button this is can click it
             if (interaction.user.id !== userId) {
-                return interaction.reply({
-                    content: '❌ This button is not for you.',
-                    ephemeral: true
-                });
+                return interaction.reply({ content: '❌ This button is not for you.', ephemeral: true });
             }
 
             await interaction.reply({
@@ -136,7 +169,7 @@ client.on('interactionCreate', async (interaction) => {
                 ephemeral: true
             });
 
-            const pendingData = client._disciplinePending?.get(groupName.replace(/_/g, ' '));
+            const pendingData = client._disciplinePending?.get(groupName);
             if (pendingData) pendingData.pendingKicks.delete(userId);
 
             const guild = await client.guilds.fetch(interaction.guildId).catch(() => null);
@@ -145,7 +178,7 @@ client.on('interactionCreate', async (interaction) => {
             const member = await guild.members.fetch(userId).catch(() => null);
             if (!member) return;
 
-            // DM before kick — no button
+            // DM before kick
             try {
                 await member.send({
                     embeds: [new EmbedBuilder()
@@ -158,7 +191,7 @@ client.on('interactionCreate', async (interaction) => {
                             `We appreciate the time and effort you've contributed during your time as an alliance with **Kavià Café**.\n\n` +
                             `If you believe this decision was made in error, please feel free to DM me for clarification or open a ticket.\n\n` +
                             `**Regards,**\n` +
-                            `**${pendingData?.staffName || interaction.user.username}**\n` +
+                            `**${pendingData?.staffName || 'PR Staff'}**\n` +
                             `**${pendingData?.rank || 'PR Staff'}**\n` +
                             `**Kavià || Public Relations Team**`
                         )
@@ -190,7 +223,7 @@ client.on('interactionCreate', async (interaction) => {
                         if (ch) await ch.setParent(TERMINATED_CATEGORY_ID, { lockPermissions: false }).catch(console.error);
                     }
                 }
-                client._disciplinePending.delete(groupName.replace(/_/g, ' '));
+                client._disciplinePending.delete(groupName);
             }
 
             // Log
@@ -202,9 +235,9 @@ client.on('interactionCreate', async (interaction) => {
                         .setColor('Green')
                         .addFields(
                             { name: 'User', value: `<@${userId}>`, inline: true },
-                            { name: 'Alliance', value: groupName.replace(/_/g, ' '), inline: true },
+                            { name: 'Alliance', value: groupName, inline: true },
                             { name: 'Action', value: actionLabel, inline: true },
-                            { name: 'Acknowledged By', value: `${interaction.user.tag}`, inline: true },
+                            { name: 'Acknowledged By', value: interaction.user.tag, inline: true },
                             { name: 'Date', value: new Date().toLocaleString(), inline: false }
                         )
                         .setTimestamp()]

@@ -75,51 +75,52 @@ module.exports = {
                 ? `\n\n⚠️ **Note:** No channel is set for this alliance. The action has been logged but you will need to send the public message manually.`
                 : '';
 
-    // ── Remove Strike ──
-if (action === 'remove-strike') {
-    if (!strikeNumber) return await interaction.editReply('❌ You must provide a strike number to remove.');
+            // ── Remove Strike ──
+            if (action === 'remove-strike') {
+                if (!strikeNumber) return await interaction.editReply('❌ You must provide a strike number to remove.');
 
-    const strike = alliance.strikes.find(s => s.number === strikeNumber && !s.removed);
-    if (!strike) return await interaction.editReply(`❌ Strike #${strikeNumber} not found or already removed.`);
+                const strike = alliance.strikes.find(s => s.number === strikeNumber && !s.removed);
+                if (!strike) return await interaction.editReply(`❌ Strike #${strikeNumber} not found or already removed.`);
 
-    strike.removed = true;
-    strike.removedBy = interaction.user.tag;
-    strike.removalReason = reason;
-    strike.removedOn = new Date().toLocaleString();
+                strike.removed = true;
+                strike.removedBy = interaction.user.tag;
+                strike.removalReason = reason;
+                strike.removedOn = new Date().toLocaleString();
 
-    await saveAlliance(alliance);
+                await saveAlliance(alliance);
 
-    // Check remaining active strikes after removal
-    const activeStrikes = alliance.strikes.filter(s => !s.removed);
-    const hasStrike1 = activeStrikes.some(s => s.number === 1);
-    const hasStrike2 = activeStrikes.some(s => s.number === 2);
+                // Check remaining active strikes after removal
+                const activeStrikes = alliance.strikes.filter(s => !s.removed);
+                const hasStrike1 = activeStrikes.some(s => s.number === 1);
+                const hasStrike2 = activeStrikes.some(s => s.number === 2);
 
-    // Remove strike roles from their reps
-    const theirRepIds = alliance.theirRepIds || [];
-    for (const repId of theirRepIds) {
-        const member = await interaction.guild.members.fetch(repId).catch(() => null);
-        if (!member) continue;
-        if (!hasStrike1) await member.roles.remove(STRIKE_1_ROLE_ID).catch(console.error);
-        if (!hasStrike2) await member.roles.remove(STRIKE_2_ROLE_ID).catch(console.error);
-    }
+                // Remove strike roles from their reps
+                const theirRepIds = alliance.theirRepIds || [];
+                for (const repId of theirRepIds) {
+                    const member = await interaction.guild.members.fetch(repId).catch(() => null);
+                    if (!member) continue;
+                    if (!hasStrike1) await member.roles.remove(STRIKE_1_ROLE_ID).catch(console.error);
+                    if (!hasStrike2) await member.roles.remove(STRIKE_2_ROLE_ID).catch(console.error);
+                }
 
-    if (logChannel) {
-        const removeEmbed = new EmbedBuilder()
-            .setTitle(`⚠️ Strike Removed from ${groupName}`)
-            .setColor('Yellow')
-            .addFields(
-                { name: '📅 Date Removed', value: strike.removedOn },
-                { name: '🗑️ Removed By', value: strike.removedBy },
-                { name: '📝 Removal Reason', value: strike.removalReason },
-                { name: 'Strike Number', value: `${strike.number}` },
-                { name: 'Original Reason', value: strike.reason }
-            )
-            .setTimestamp();
-        await logChannel.send({ embeds: [removeEmbed] });
-    }
+                if (logChannel) {
+                    const removeEmbed = new EmbedBuilder()
+                        .setTitle(`⚠️ Strike Removed from ${groupName}`)
+                        .setColor('Yellow')
+                        .addFields(
+                            { name: '📅 Date Removed', value: strike.removedOn },
+                            { name: '🗑️ Removed By', value: strike.removedBy },
+                            { name: '📝 Removal Reason', value: strike.removalReason },
+                            { name: 'Strike Number', value: `${strike.number}` },
+                            { name: 'Original Reason', value: strike.reason }
+                        )
+                        .setTimestamp();
+                    await logChannel.send({ embeds: [removeEmbed] });
+                }
 
-    return await interaction.editReply(`✅ Strike #${strikeNumber} removed from alliance "${groupName}" and strike roles updated.${noChannelWarning}`);
-}
+                return await interaction.editReply(`✅ Strike #${strikeNumber} removed from alliance "${groupName}" and strike roles updated.${noChannelWarning}`);
+            }
+
             // ── Strike ──
             if (action === 'strike1' || action === 'strike2') {
                 const newStrikeNumber = alliance.strikes.length + 1;
@@ -135,7 +136,7 @@ if (action === 'remove-strike') {
 
                 const strikeRoleId = action === 'strike1' ? STRIKE_1_ROLE_ID : STRIKE_2_ROLE_ID;
 
-                // Add strike role to their reps
+                // Add strike role to their reps only
                 const theirRepIds = alliance.theirRepIds || [];
                 for (const repId of theirRepIds) {
                     const member = await interaction.guild.members.fetch(repId).catch(() => null);
@@ -143,7 +144,6 @@ if (action === 'remove-strike') {
                 }
 
                 if (publicChannel) {
-                    // Build I Understand buttons for each rep
                     const repNames = [];
                     for (const repId of theirRepIds) {
                         const member = await interaction.guild.members.fetch(repId).catch(() => null);
@@ -152,7 +152,7 @@ if (action === 'remove-strike') {
 
                     const buttons = repNames.map(rep =>
                         new ButtonBuilder()
-                            .setCustomId(`discipline_understood_${rep.id}_${groupName.replace(/\s+/g, '_')}_${action}`)
+                            .setCustomId(`strike_understood_${rep.id}_${groupName.replace(/\s+/g, '_')}_${action}`)
                             .setLabel(`✅ I Understand — ${rep.name}`)
                             .setStyle(ButtonStyle.Secondary)
                     ).slice(0, 5);
@@ -174,19 +174,6 @@ if (action === 'remove-strike') {
                             .setTimestamp()],
                         components: buttons.length > 0 ? [new ActionRowBuilder().addComponents(...buttons)] : [],
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
-                    });
-
-                    // Store strike pending data
-                    client._disciplinePending = client._disciplinePending || new Map();
-                    client._disciplinePending.set(`${groupName}_${action}`, {
-                        pendingAcks: new Set(theirRepIds),
-                        alliance,
-                        actionLabel: action,
-                        reason,
-                        rank,
-                        staffName: interaction.user.username,
-                        guildId: interaction.guild.id,
-                        isStrike: true
                     });
                 }
             }
@@ -215,8 +202,7 @@ if (action === 'remove-strike') {
                     reason,
                     rank,
                     staffName: interaction.user.username,
-                    guildId: interaction.guild.id,
-                    isStrike: false
+                    guildId: interaction.guild.id
                 });
 
                 if (publicChannel) {

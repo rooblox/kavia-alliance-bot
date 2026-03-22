@@ -8,6 +8,8 @@ const CATEGORY_MAP = {
     Others: '1451294316000579848'
 };
 
+const ALLIED_REPS_ROLE_ID = '1417866883750957188';
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('alliance-add')
@@ -27,19 +29,19 @@ module.exports = {
                 ))
         .addUserOption(option =>
             option.setName('their_rep_1')
-                .setDescription('Their first rep (will receive alliance role)')
+                .setDescription('Their first rep')
                 .setRequired(true))
         .addUserOption(option =>
             option.setName('their_rep_2')
-                .setDescription('Their second rep (will receive alliance role)')
+                .setDescription('Their second rep')
                 .setRequired(false))
         .addUserOption(option =>
             option.setName('our_rep_1')
-                .setDescription('Our first rep (will receive rep pair role)')
+                .setDescription('Our first rep')
                 .setRequired(false))
         .addUserOption(option =>
             option.setName('our_rep_2')
-                .setDescription('Our second rep (will receive rep pair role)')
+                .setDescription('Our second rep')
                 .setRequired(false))
         .addStringOption(option =>
             option.setName('discord_link')
@@ -71,7 +73,7 @@ module.exports = {
 
             await interaction.editReply('⏳ Setting up alliance... creating roles and channel.');
 
-            // Build rep strings automatically from user options
+            // Build rep strings
             const theirRepsStr = [theirRep1, theirRep2]
                 .filter(Boolean)
                 .map(m => `<@${m.id}>`)
@@ -94,9 +96,17 @@ module.exports = {
                 reason: `Our rep pair role for ${groupName}`
             });
 
-            // ── Assign roles ──
-            if (theirRep1) await theirRep1.roles.add(theirRole).catch(console.error);
-            if (theirRep2) await theirRep2.roles.add(theirRole).catch(console.error);
+            // ── Assign roles to their reps (alliance role + allied reps role) ──
+            if (theirRep1) {
+                await theirRep1.roles.add(theirRole).catch(console.error);
+                await theirRep1.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
+            }
+            if (theirRep2) {
+                await theirRep2.roles.add(theirRole).catch(console.error);
+                await theirRep2.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
+            }
+
+            // ── Assign our rep pair role to our reps only ──
             if (ourRep1) await ourRep1.roles.add(ourRole).catch(console.error);
             if (ourRep2) await ourRep2.roles.add(ourRole).catch(console.error);
 
@@ -128,15 +138,15 @@ module.exports = {
 
             // ── Send welcome message ──
             const ourRepsArray = [ourRep1, ourRep2].filter(Boolean);
-            const welcomeMessage = `:tada: **Welcome New Alliance! | Kavia Café x ${groupName}** :tada:
+            const welcomeMessage = `:tada: **Welcome New Alliance! | Kavi Café x ${groupName}** :tada:
 
-We're thrilled to officially welcome your community into an alliance with Kavia Café! :star2:
+We're thrilled to officially welcome your community into an alliance with Kavi Café! :star2:
 
 :speech_balloon: **Questions & Support**
 If you have any questions, concerns, or suggestions, this is the perfect place to share them.
 
 :busts_in_silhouette: **Your Representative Pair**
-Please meet your Kavia Café representatives:
+Please meet your Kavi Café representatives:
 
 **• ${ourRepsArray[0] ? `<@${ourRepsArray[0].id}>` : 'TBD'}**
 **• ${ourRepsArray[1] ? `<@${ourRepsArray[1].id}>` : 'TBD'}**
@@ -144,7 +154,7 @@ Please meet your Kavia Café representatives:
 :handshake: **Looking Ahead**
 We're so excited to be working together and building a strong relationship.
 
-:coffee::sparkles: Here's to a successful partnership between **Kavia Café** and **${groupName}**! :sparkles::coffee:`;
+:coffee::sparkles: Here's to a successful partnership between **Kavi Café** and **${groupName}**! :sparkles::coffee:`;
 
             await channel.send({ content: welcomeMessage });
 
