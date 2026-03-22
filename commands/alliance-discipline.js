@@ -3,6 +3,8 @@ const { findAlliance, saveAlliance, deleteAlliance } = require('../utils/allianc
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
 
 const APPEAL_LINK = 'https://forms.gle/h3jUfsMkkzNSdcww8';
+const ALLIED_REPS_ROLE_ID = '1417866883750957188';
+const TERMINATED_CATEGORY_ID = '1428837884252786819';
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -56,7 +58,6 @@ module.exports = {
 
             const logChannel = interaction.guild.channels.cache.find(ch => ch.name === 'alliance-term-strikes');
 
-            // Get the alliance's welcome channel
             const publicChannel = alliance.welcomeChannelId
                 ? await client.channels.fetch(alliance.welcomeChannelId).catch(() => null)
                 : null;
@@ -112,10 +113,11 @@ module.exports = {
 
                 if (publicChannel) {
                     await publicChannel.send({
+                        content: `<@&${ALLIED_REPS_ROLE_ID}>`,
                         embeds: [new EmbedBuilder()
                             .setTitle(`⚠️ Alliance Strike — ${groupName}`)
                             .setDescription(
-                                `<@&${alliance.repRoleId || ''}>\n\n` +
+                                `<@&${ALLIED_REPS_ROLE_ID}>\n\n` +
                                 `Your alliance has received **${action === 'strike1' ? 'Strike 1' : 'Strike 2'}**.\n\n` +
                                 `**Reason:** ${reason}\n\n` +
                                 `If you believe this is an error or would like to appeal, please use the link below.\n` +
@@ -123,7 +125,8 @@ module.exports = {
                             )
                             .setColor('Orange')
                             .setFooter({ text: 'Kavià Café — Public Relations Department' })
-                            .setTimestamp()]
+                            .setTimestamp()],
+                        allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
                 }
             }
@@ -132,10 +135,11 @@ module.exports = {
             if (action === 'termination') {
                 if (publicChannel) {
                     await publicChannel.send({
+                        content: `<@&${ALLIED_REPS_ROLE_ID}>`,
                         embeds: [new EmbedBuilder()
                             .setTitle(`📢 Alliance Termination — ${groupName}`)
                             .setDescription(
-                                `<@&${alliance.repRoleId || ''}>\n\n` +
+                                `<@&${ALLIED_REPS_ROLE_ID}>\n\n` +
                                 `We regret to inform you that Kavià Café will be **terminating** our alliance partnership with **${groupName}**, effective immediately.\n\n` +
                                 `**Reason:** ${reason}\n\n` +
                                 `This decision does not reflect any ill intent toward your group. We truly appreciate the time, effort, and partnership we've shared and wish your establishment the very best moving forward.\n\n` +
@@ -145,8 +149,17 @@ module.exports = {
                             )
                             .setColor('Red')
                             .setFooter({ text: 'Kavià Café — Public Relations Department' })
-                            .setTimestamp()]
+                            .setTimestamp()],
+                        allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
+
+                    // Move channel to terminated category
+                    try {
+                        await publicChannel.setParent(TERMINATED_CATEGORY_ID, { lockPermissions: false });
+                        console.log(`✅ Moved ${groupName} channel to terminated category.`);
+                    } catch (err) {
+                        console.error(`❌ Failed to move channel to terminated category:`, err);
+                    }
                 }
 
                 await deleteAlliance(groupName);
