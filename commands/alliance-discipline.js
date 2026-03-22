@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ChannelType } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { findAlliance, saveAlliance, deleteAlliance } = require('../utils/allianceStorage');
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
 
@@ -29,10 +29,6 @@ module.exports = {
         .addIntegerOption(option =>
             option.setName('strike_number')
                 .setDescription('Strike number to remove (required if removing strike)'))
-        .addChannelOption(option =>
-            option.setName('public_channel')
-                .setDescription('Channel to send a public message to')
-                .addChannelTypes(ChannelType.GuildText))
         .addStringOption(option =>
             option.setName('notes')
                 .setDescription('Notes / Evidence'))
@@ -51,7 +47,6 @@ module.exports = {
             const action = interaction.options.getString('action');
             const reason = interaction.options.getString('reason');
             const strikeNumber = interaction.options.getInteger('strike_number');
-            const publicChannel = interaction.options.getChannel('public_channel');
             const notes = interaction.options.getString('notes') || 'N/A';
             const approvedBy = interaction.options.getString('approved_by') || 'N/A';
             const followUp = interaction.options.getString('follow_up') || 'N/A';
@@ -61,6 +56,16 @@ module.exports = {
 
             const logChannel = interaction.guild.channels.cache.find(ch => ch.name === 'alliance-term-strikes');
 
+            // Get the alliance's welcome channel
+            const publicChannel = alliance.welcomeChannelId
+                ? await client.channels.fetch(alliance.welcomeChannelId).catch(() => null)
+                : null;
+
+            const noChannelWarning = !publicChannel
+                ? `\n\n⚠️ **Note:** No channel is set for this alliance. The action has been logged but you will need to send the public message manually.`
+                : '';
+
+            // ── Remove Strike ──
             if (action === 'remove-strike') {
                 if (!strikeNumber) return await interaction.editReply('❌ You must provide a strike number to remove.');
 
@@ -89,9 +94,10 @@ module.exports = {
                     await logChannel.send({ embeds: [removeEmbed] });
                 }
 
-                return await interaction.editReply(`✅ Strike #${strikeNumber} removed from alliance "${groupName}".`);
+                return await interaction.editReply(`✅ Strike #${strikeNumber} removed from alliance "${groupName}".${noChannelWarning}`);
             }
 
+            // ── Strike ──
             if (action === 'strike1' || action === 'strike2') {
                 const newStrikeNumber = alliance.strikes.length + 1;
                 alliance.strikes.push({
@@ -103,13 +109,51 @@ module.exports = {
                     removed: false
                 });
                 await saveAlliance(alliance);
+
+                if (publicChannel) {
+                    await publicChannel.send({
+                        embeds: [new EmbedBuilder()
+                            .setTitle(`⚠️ Alliance Strike — ${groupName}`)
+                            .setDescription(
+                                `<@&${alliance.repRoleId || ''}>\n\n` +
+                                `Your alliance has received **${action === 'strike1' ? 'Strike 1' : 'Strike 2'}**.\n\n` +
+                                `**Reason:** ${reason}\n\n` +
+                                `If you believe this is an error or would like to appeal, please use the link below.\n` +
+                                `[Submit an Appeal](${APPEAL_LINK})`
+                            )
+                            .setColor('Orange')
+                            .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                            .setTimestamp()]
+                    });
+                }
             }
 
+            // ── Termination ──
             if (action === 'termination') {
+                if (publicChannel) {
+                    await publicChannel.send({
+                        embeds: [new EmbedBuilder()
+                            .setTitle(`📢 Alliance Termination — ${groupName}`)
+                            .setDescription(
+                                `<@&${alliance.repRoleId || ''}>\n\n` +
+                                `We regret to inform you that Kavià Café will be **terminating** our alliance partnership with **${groupName}**, effective immediately.\n\n` +
+                                `**Reason:** ${reason}\n\n` +
+                                `This decision does not reflect any ill intent toward your group. We truly appreciate the time, effort, and partnership we've shared and wish your establishment the very best moving forward.\n\n` +
+                                `If you would like to appeal this decision, please use the link below.\n` +
+                                `[Submit an Appeal](${APPEAL_LINK})\n\n` +
+                                `Thank you for your understanding,\n**Kavià Café Administration** ☕`
+                            )
+                            .setColor('Red')
+                            .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                            .setTimestamp()]
+                    });
+                }
+
                 await deleteAlliance(groupName);
                 await refreshAllianceList(client);
             }
 
+            // ── Log embed ──
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
                     .setTitle('☕ | Kavia Café — Alliance / Termination & Strike Log')
@@ -130,17 +174,8 @@ module.exports = {
                 await logChannel.send({ embeds: [logEmbed] });
             }
 
-            if (publicChannel) {
-                let publicMessage = '';
-                if (action === 'strike1' || action === 'strike2') {
-                    publicMessage = `⚠️ Alliance **${groupName}** has received **${action === 'strike1' ? 'Strike 1' : 'Strike 2'}** for the following reason:\n${reason}\n\n[Submit an appeal here](${APPEAL_LINK})`;
-                } else if (action === 'termination') {
-                    publicMessage = `📢 | Alliance Termination Notice\n\nHello there,\n\nWe'd like to inform you that Kavia Café will be terminating our alliance partnership with **${groupName}**, effective immediately.\n\n**Reason for Termination:** ${reason}\n\nPlease note that this decision does not reflect any ill intent toward your group. We truly appreciate the time, effort, and partnership we've shared and wish your establishment the very best moving forward.\n\n[Submit an appeal here](${APPEAL_LINK})\n\nThank you for your understanding,\nKavia Café Administration ☕`;
-                }
-                if (publicMessage) await publicChannel.send({ content: publicMessage });
-            }
+            await interaction.editReply(`✅ Action "${action}" successfully applied to alliance "${groupName}".${noChannelWarning}`);
 
-            await interaction.editReply(`✅ Action "${action}" successfully applied to alliance "${groupName}".`);
         } catch (err) {
             console.error('Error executing alliance-discipline:', err);
             if (interaction.deferred || interaction.replied) {
