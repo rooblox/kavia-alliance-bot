@@ -121,7 +121,8 @@ client.on('interactionCreate', async (interaction) => {
             const userId = parts[0];
             const groupName = parts.slice(1).join('_').replace(/_/g, ' ');
 
-            await interaction.update({ components: [] });
+            await interaction.deferUpdate();
+            await interaction.editReply({ components: [] });
 
             const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
             if (logChannel) {
