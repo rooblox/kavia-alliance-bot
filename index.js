@@ -97,22 +97,39 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    if (interaction.customId.startsWith('topost_')) {
+        const topost = client.commands.get('topost');
+        if (topost) await topost.handleButton(interaction, client);
+        return;
+    }
+
     const starttraining = client.commands.get('starttraining');
     if (starttraining) await starttraining.handleButton(interaction, client);
+});
+
+// Handle modals
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isModalSubmit()) return;
+
+    if (interaction.customId.startsWith('topost_modal_')) {
+        const topost = client.commands.get('topost');
+        if (topost) await topost.handleModal(interaction, client);
+    }
 });
 
 // Handle messages
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // Handle checkin replies (guild messages)
     if (message.guild) {
         const checkin = client.commands.get('checkin');
         if (checkin) await checkin.handleCheckinReply(message, client);
+
+        const topost = client.commands.get('topost');
+        if (topost) await topost.handleTopostReply(message, client);
         return;
     }
 
-    // Handle DM messages for training
     const starttraining = client.commands.get('starttraining');
     if (starttraining) await starttraining.handleMessage(message, client);
 });
