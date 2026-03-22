@@ -2,9 +2,9 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { loadAlliances } = require('../utils/allianceStorage');
 
 const LOG_CHANNEL_ID = '1485119755206791289';
+const CHECKIN_LOG_CHANNEL_ID = '1482430133561196625';
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 
-// Store active checkins: channelId -> { groupName, responded }
 const activeCheckins = new Map();
 
 module.exports = {
@@ -17,15 +17,60 @@ module.exports = {
 
         try {
             const alliances = await loadAlliances();
-
             if (!alliances.length) return await interaction.editReply('❌ No alliances found.');
 
             const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+            const checkinLogChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
 
             let sent = 0;
             let failed = 0;
             const failedAlliances = [];
 
+            // Build initial tracking embed
+            const buildTrackingEmbed = (alliances, checkins) => {
+                const sections = ['Restaurants', 'Cafes', 'Others'];
+                const lines = [];
+
+                sections.forEach(section => {
+                    const list = alliances.filter(a => a.section === section);
+                    if (!list.length) return;
+
+                    lines.push(`\n**— ${section} —**`);
+                    list.forEach(a => {
+                        if (!a.welcomeChannelId) {
+                            lines.push(`⚠️ **${a.groupName}** — No channel set`);
+                            return;
+                        }
+                        const checkin = checkins.get(a.welcomeChannelId);
+                        if (!checkin) {
+                            lines.push(`⚠️ **${a.groupName}** — Failed to send`);
+                        } else if (checkin.responded) {
+                            lines.push(`✅ **${a.groupName}** — Responded`);
+                        } else if (checkin.noResponse) {
+                            lines.push(`❌ **${a.groupName}** — No response (48hrs)`);
+                        } else {
+                            lines.push(`⏳ **${a.groupName}** — Awaiting response`);
+                        }
+                    });
+                });
+
+                return new EmbedBuilder()
+                    .setTitle('📋 Alliance Check-In Tracker')
+                    .setDescription(lines.join('\n'))
+                    .setColor(0x9B59B6)
+                    .setFooter({ text: `Started by ${interaction.user.tag} • Updates automatically` })
+                    .setTimestamp();
+            };
+
+            // Send initial tracking embed
+            let trackingMessage = null;
+            if (checkinLogChannel) {
+                trackingMessage = await checkinLogChannel.send({
+                    embeds: [buildTrackingEmbed(alliances, activeCheckins)]
+                });
+            }
+
+            // Send checkin to each alliance
             for (const alliance of alliances) {
                 if (!alliance.welcomeChannelId) {
                     failed++;
@@ -61,18 +106,38 @@ module.exports = {
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
 
-                    // Store active checkin
                     activeCheckins.set(alliance.welcomeChannelId, {
                         groupName: alliance.groupName,
                         responded: false,
+                        noResponse: false,
                         messageId: checkinMessage.id,
-                        startedAt: Date.now()
+                        startedAt: Date.now(),
+                        trackingMessageId: trackingMessage?.id,
+                        alliances
                     });
 
-                    // Set 48 hour timeout for no response
+                    sent++;
+
+                    // Update tracking embed after each send
+                    if (trackingMessage) {
+                        await trackingMessage.edit({
+                            embeds: [buildTrackingEmbed(alliances, activeCheckins)]
+                        }).catch(() => {});
+                    }
+
+                    // 48 hour timeout
                     setTimeout(async () => {
                         const checkin = activeCheckins.get(alliance.welcomeChannelId);
                         if (!checkin || checkin.responded) return;
+
+                        checkin.noResponse = true;
+
+                        // Update tracking embed
+                        if (trackingMessage) {
+                            await trackingMessage.edit({
+                                embeds: [buildTrackingEmbed(alliances, activeCheckins)]
+                            }).catch(() => {});
+                        }
 
                         activeCheckins.delete(alliance.welcomeChannelId);
 
@@ -90,7 +155,6 @@ module.exports = {
                             await logChannel.send({ embeds: [noResponseEmbed] });
                         }
 
-                        // Notify the channel
                         await channel.send({
                             embeds: [new EmbedBuilder()
                                 .setDescription(`⚠️ <@&${ALLIED_REPS_ROLE_ID}> The 48 hour check-in window has passed with no response. PR Leadership has been notified.`)
@@ -99,12 +163,18 @@ module.exports = {
 
                     }, 48 * 60 * 60 * 1000);
 
-                    sent++;
                 } catch (err) {
                     console.error(`Failed to send checkin to ${alliance.groupName}:`, err);
                     failed++;
                     failedAlliances.push(`${alliance.groupName} (send failed)`);
                 }
+            }
+
+            // Final tracking embed update after all sent
+            if (trackingMessage) {
+                await trackingMessage.edit({
+                    embeds: [buildTrackingEmbed(alliances, activeCheckins)]
+                }).catch(() => {});
             }
 
             // Log checkin started
@@ -132,7 +202,6 @@ module.exports = {
         }
     },
 
-    // Handle replies in alliance channels
     async handleCheckinReply(message, client) {
         if (message.author.bot) return;
         if (!message.guild) return;
@@ -141,9 +210,58 @@ module.exports = {
         if (!checkin || checkin.responded) return;
 
         checkin.responded = true;
-        activeCheckins.delete(message.channel.id);
 
         await message.react('✅').catch(() => {});
+
+        // Update tracking embed
+        if (checkin.trackingMessageId) {
+            const checkinLogChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
+            if (checkinLogChannel) {
+                const trackingMessage = await checkinLogChannel.messages.fetch(checkin.trackingMessageId).catch(() => null);
+                if (trackingMessage) {
+                    const buildTrackingEmbed = (alliances, checkins) => {
+                        const sections = ['Restaurants', 'Cafes', 'Others'];
+                        const lines = [];
+
+                        sections.forEach(section => {
+                            const list = alliances.filter(a => a.section === section);
+                            if (!list.length) return;
+
+                            lines.push(`\n**— ${section} —**`);
+                            list.forEach(a => {
+                                if (!a.welcomeChannelId) {
+                                    lines.push(`⚠️ **${a.groupName}** — No channel set`);
+                                    return;
+                                }
+                                const c = checkins.get(a.welcomeChannelId);
+                                if (!c) {
+                                    lines.push(`✅ **${a.groupName}** — Responded`);
+                                } else if (c.responded) {
+                                    lines.push(`✅ **${a.groupName}** — Responded`);
+                                } else if (c.noResponse) {
+                                    lines.push(`❌ **${a.groupName}** — No response (48hrs)`);
+                                } else {
+                                    lines.push(`⏳ **${a.groupName}** — Awaiting response`);
+                                }
+                            });
+                        });
+
+                        return new EmbedBuilder()
+                            .setTitle('📋 Alliance Check-In Tracker')
+                            .setDescription(lines.join('\n'))
+                            .setColor(0x9B59B6)
+                            .setFooter({ text: `Updates automatically` })
+                            .setTimestamp();
+                    };
+
+                    await trackingMessage.edit({
+                        embeds: [buildTrackingEmbed(checkin.alliances, activeCheckins)]
+                    }).catch(() => {});
+                }
+            }
+        }
+
+        activeCheckins.delete(message.channel.id);
 
         const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
         if (logChannel) {
