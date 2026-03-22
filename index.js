@@ -97,6 +97,12 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    if (interaction.customId === 'prev_post' || interaction.customId === 'next_post') {
+        const allianceListPost = client.commands.get('alliance-list-post');
+        if (allianceListPost) await allianceListPost.handlePageButton(interaction);
+        return;
+    }
+
     if (interaction.customId.startsWith('checkin_confirm_')) {
         const checkin = client.commands.get('checkin');
         if (checkin) await checkin.handleButton(interaction, client);

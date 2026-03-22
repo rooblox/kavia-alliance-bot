@@ -45,6 +45,11 @@ function buildEmbed(formatted, p) {
     return embed;
 }
 
+// Store each user's current page: userId -> page number
+const userPages = new Map();
+// Store the formatted list in memory so button handler can access it
+let cachedFormatted = [];
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('alliance-list-post')
@@ -57,9 +62,8 @@ module.exports = {
             const alliances = await loadAlliances();
             if (!alliances.length) return await interaction.editReply('No alliances found.');
 
-            const formatted = await buildPages(alliances);
-            const totalPages = Math.ceil(formatted.length / ITEMS_PER_PAGE);
-            let page = 0;
+            cachedFormatted = await buildPages(alliances);
+            const totalPages = Math.ceil(cachedFormatted.length / ITEMS_PER_PAGE);
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('prev_post').setLabel('⬅️').setStyle(ButtonStyle.Secondary),
@@ -67,23 +71,13 @@ module.exports = {
             );
 
             const post = await interaction.channel.send({
-                embeds: [buildEmbed(formatted, page)],
+                embeds: [buildEmbed(cachedFormatted, 0)],
                 components: totalPages > 1 ? [row] : []
             });
 
-            // Save message ID and channel ID to MongoDB
             await setListMessage(post.id, interaction.channel.id);
-
             await interaction.editReply('✅ Alliance list posted.');
 
-            if (totalPages <= 1) return;
-
-            const collector = post.createMessageComponentCollector();
-            collector.on('collect', async i => {
-                if (i.customId === 'next_post') page = Math.min(page + 1, totalPages - 1);
-                if (i.customId === 'prev_post') page = Math.max(page - 1, 0);
-                await i.update({ embeds: [buildEmbed(formatted, page)], components: [row] });
-            });
         } catch (err) {
             console.error('Error executing alliance-list-post:', err);
             if (interaction.deferred || interaction.replied) {
@@ -92,6 +86,34 @@ module.exports = {
         }
     },
 
+    async handlePageButton(interaction) {
+        const userId = interaction.user.id;
+        const totalPages = Math.ceil(cachedFormatted.length / ITEMS_PER_PAGE);
+
+        if (!cachedFormatted.length) {
+            return interaction.reply({ content: '❌ Alliance list is not loaded. Please run /alliance-list-post again.', ephemeral: true });
+        }
+
+        let page = userPages.get(userId) ?? 0;
+
+        if (interaction.customId === 'next_post') page = Math.min(page + 1, totalPages - 1);
+        if (interaction.customId === 'prev_post') page = Math.max(page - 1, 0);
+
+        userPages.set(userId, page);
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('prev_post').setLabel('⬅️').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('next_post').setLabel('➡️').setStyle(ButtonStyle.Secondary)
+        );
+
+        await interaction.reply({
+            embeds: [buildEmbed(cachedFormatted, page)],
+            components: [row],
+            ephemeral: true
+        });
+    },
+
     buildEmbed,
-    buildPages
+    buildPages,
+    getCachedFormatted: () => cachedFormatted
 };
