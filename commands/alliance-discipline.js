@@ -6,6 +6,8 @@ const APPEAL_LINK = 'https://forms.gle/h3jUfsMkkzNSdcww8';
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 const TERMINATED_CATEGORY_ID = '1428837884252786819';
 const LOG_CHANNEL_ID = '1462580398935642144';
+const STRIKE_1_ROLE_ID = '1433165486258127062';
+const STRIKE_2_ROLE_ID = '1433165562531545141';
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -73,38 +75,51 @@ module.exports = {
                 ? `\n\n⚠️ **Note:** No channel is set for this alliance. The action has been logged but you will need to send the public message manually.`
                 : '';
 
-            // ── Remove Strike ──
-            if (action === 'remove-strike') {
-                if (!strikeNumber) return await interaction.editReply('❌ You must provide a strike number to remove.');
+    // ── Remove Strike ──
+if (action === 'remove-strike') {
+    if (!strikeNumber) return await interaction.editReply('❌ You must provide a strike number to remove.');
 
-                const strike = alliance.strikes.find(s => s.number === strikeNumber && !s.removed);
-                if (!strike) return await interaction.editReply(`❌ Strike #${strikeNumber} not found or already removed.`);
+    const strike = alliance.strikes.find(s => s.number === strikeNumber && !s.removed);
+    if (!strike) return await interaction.editReply(`❌ Strike #${strikeNumber} not found or already removed.`);
 
-                strike.removed = true;
-                strike.removedBy = interaction.user.tag;
-                strike.removalReason = reason;
-                strike.removedOn = new Date().toLocaleString();
+    strike.removed = true;
+    strike.removedBy = interaction.user.tag;
+    strike.removalReason = reason;
+    strike.removedOn = new Date().toLocaleString();
 
-                await saveAlliance(alliance);
+    await saveAlliance(alliance);
 
-                if (logChannel) {
-                    const removeEmbed = new EmbedBuilder()
-                        .setTitle(`⚠️ Strike Removed from ${groupName}`)
-                        .setColor('Yellow')
-                        .addFields(
-                            { name: '📅 Date Removed', value: strike.removedOn },
-                            { name: '🗑️ Removed By', value: strike.removedBy },
-                            { name: '📝 Removal Reason', value: strike.removalReason },
-                            { name: 'Strike Number', value: `${strike.number}` },
-                            { name: 'Original Reason', value: strike.reason }
-                        )
-                        .setTimestamp();
-                    await logChannel.send({ embeds: [removeEmbed] });
-                }
+    // Check remaining active strikes after removal
+    const activeStrikes = alliance.strikes.filter(s => !s.removed);
+    const hasStrike1 = activeStrikes.some(s => s.number === 1);
+    const hasStrike2 = activeStrikes.some(s => s.number === 2);
 
-                return await interaction.editReply(`✅ Strike #${strikeNumber} removed from alliance "${groupName}".${noChannelWarning}`);
-            }
+    // Remove strike roles from their reps
+    const theirRepIds = alliance.theirRepIds || [];
+    for (const repId of theirRepIds) {
+        const member = await interaction.guild.members.fetch(repId).catch(() => null);
+        if (!member) continue;
+        if (!hasStrike1) await member.roles.remove(STRIKE_1_ROLE_ID).catch(console.error);
+        if (!hasStrike2) await member.roles.remove(STRIKE_2_ROLE_ID).catch(console.error);
+    }
 
+    if (logChannel) {
+        const removeEmbed = new EmbedBuilder()
+            .setTitle(`⚠️ Strike Removed from ${groupName}`)
+            .setColor('Yellow')
+            .addFields(
+                { name: '📅 Date Removed', value: strike.removedOn },
+                { name: '🗑️ Removed By', value: strike.removedBy },
+                { name: '📝 Removal Reason', value: strike.removalReason },
+                { name: 'Strike Number', value: `${strike.number}` },
+                { name: 'Original Reason', value: strike.reason }
+            )
+            .setTimestamp();
+        await logChannel.send({ embeds: [removeEmbed] });
+    }
+
+    return await interaction.editReply(`✅ Strike #${strikeNumber} removed from alliance "${groupName}" and strike roles updated.${noChannelWarning}`);
+}
             // ── Strike ──
             if (action === 'strike1' || action === 'strike2') {
                 const newStrikeNumber = alliance.strikes.length + 1;
@@ -118,7 +133,30 @@ module.exports = {
                 });
                 await saveAlliance(alliance);
 
+                const strikeRoleId = action === 'strike1' ? STRIKE_1_ROLE_ID : STRIKE_2_ROLE_ID;
+
+                // Add strike role to their reps
+                const theirRepIds = alliance.theirRepIds || [];
+                for (const repId of theirRepIds) {
+                    const member = await interaction.guild.members.fetch(repId).catch(() => null);
+                    if (member) await member.roles.add(strikeRoleId).catch(console.error);
+                }
+
                 if (publicChannel) {
+                    // Build I Understand buttons for each rep
+                    const repNames = [];
+                    for (const repId of theirRepIds) {
+                        const member = await interaction.guild.members.fetch(repId).catch(() => null);
+                        repNames.push({ id: repId, name: member ? member.displayName : 'Rep' });
+                    }
+
+                    const buttons = repNames.map(rep =>
+                        new ButtonBuilder()
+                            .setCustomId(`discipline_understood_${rep.id}_${groupName.replace(/\s+/g, '_')}_${action}`)
+                            .setLabel(`✅ I Understand — ${rep.name}`)
+                            .setStyle(ButtonStyle.Secondary)
+                    ).slice(0, 5);
+
                     await publicChannel.send({
                         content: `<@&${ALLIED_REPS_ROLE_ID}>`,
                         embeds: [new EmbedBuilder()
@@ -128,12 +166,27 @@ module.exports = {
                                 `Your alliance has received **${action === 'strike1' ? 'Strike 1' : 'Strike 2'}**.\n\n` +
                                 `**Reason:** ${reason}\n\n` +
                                 `If you believe this is an error or would like to appeal, please use the link below.\n` +
-                                `[Submit an Appeal](${APPEAL_LINK})`
+                                `[Submit an Appeal](${APPEAL_LINK})\n\n` +
+                                `**Please click your button below to acknowledge this notice.**`
                             )
                             .setColor('Orange')
                             .setFooter({ text: 'Kavià Café — Public Relations Department' })
                             .setTimestamp()],
+                        components: buttons.length > 0 ? [new ActionRowBuilder().addComponents(...buttons)] : [],
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
+                    });
+
+                    // Store strike pending data
+                    client._disciplinePending = client._disciplinePending || new Map();
+                    client._disciplinePending.set(`${groupName}_${action}`, {
+                        pendingAcks: new Set(theirRepIds),
+                        alliance,
+                        actionLabel: action,
+                        reason,
+                        rank,
+                        staffName: interaction.user.username,
+                        guildId: interaction.guild.id,
+                        isStrike: true
                     });
                 }
             }
@@ -147,14 +200,12 @@ module.exports = {
                 const theirRepIds = alliance.theirRepIds || [];
                 const pendingKicks = new Set(theirRepIds);
 
-                // Fetch member names for button labels
                 const repNames = [];
                 for (const repId of theirRepIds) {
                     const member = await interaction.guild.members.fetch(repId).catch(() => null);
                     repNames.push({ id: repId, name: member ? member.displayName : 'Rep' });
                 }
 
-                // Store pending kicks on client
                 client._disciplinePending = client._disciplinePending || new Map();
                 client._disciplinePending.set(groupName, {
                     pendingKicks,
@@ -164,11 +215,11 @@ module.exports = {
                     reason,
                     rank,
                     staffName: interaction.user.username,
-                    guildId: interaction.guild.id
+                    guildId: interaction.guild.id,
+                    isStrike: false
                 });
 
                 if (publicChannel) {
-                    // Build one button per rep with their display name
                     const buttons = repNames.map(rep =>
                         new ButtonBuilder()
                             .setCustomId(`discipline_understood_${rep.id}_${groupName.replace(/\s+/g, '_')}_${actionLabel}`)
@@ -259,7 +310,6 @@ module.exports = {
                             }
                         }
 
-                        // Delete roles and archive channel
                         if (pendingData.alliance.repRoleId) {
                             const theirRole = g.roles.cache.get(pendingData.alliance.repRoleId);
                             if (theirRole) await theirRole.delete().catch(console.error);
