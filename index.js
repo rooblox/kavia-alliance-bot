@@ -11,9 +11,10 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.DirectMessages
+        GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.MessageContent
     ],
-    partials: ['CHANNEL']
+    partials: ['CHANNEL', 'MESSAGE']
 });
 
 client.commands = new Collection();
@@ -50,6 +51,7 @@ client.on('guildCreate', async (guild) => {
     await deployToGuild(guild.id);
 });
 
+// Role restriction + command handler
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -76,6 +78,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// Handle claim_rep button
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
     if (interaction.customId !== 'claim_rep') return;
@@ -92,6 +95,14 @@ client.on('interactionCreate', async (interaction) => {
     } catch (err) {
         console.error('Error handling claim_rep button:', err);
     }
+});
+
+// Handle DM messages for training
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+    if (message.guild) return;
+    const starttraining = client.commands.get('starttraining');
+    if (starttraining) await starttraining.handleMessage(message, client);
 });
 
 client.login(process.env.TOKEN);
