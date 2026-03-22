@@ -5,7 +5,7 @@ const LOG_CHANNEL_ID = '1485119755206791289';
 const SECTIONS = [
     {
         title: '📢 Welcome to Kavià Café Staff Training',
-        content: `Hello! First and foremost, congratulations on joining the Public Relations Department at Kavià. You have already completed your mentorship and this is a final training to help you find your way in the alliance hub and public relations server, and inform you of our expectations.\n\nAs a PR Staff member, your role is very important. You'll help us manage, maintain, and grow our alliances with other groups.\n\nDuring this training I will be sending a number of messages. When you have fully read a message and understood it, please reply with **"done"**.`
+        content: `Hello! First and foremost, congratulations on joining the Public Relations Department at Kavià. You have already completed your mentorship and this is a final training to help you find your way in the alliance hub and public relations server, and inform you of our expectations.\n\nAs a PR Staff member, your role is very important. You'll help us manage, maintain, and grow our alliances with other groups.\n\nDuring this training I will be sending a number of messages. When you have fully read a message and understood it, please click **Done** below.`
     },
     {
         title: '🎯 Responsibilities and Expectations',
@@ -33,7 +33,7 @@ const SECTIONS = [
     },
     {
         title: '💜 Final Notes',
-        content: `We are incredibly grateful to have you in the Public Relations Department. For any more recent changes please refer to the announcements channel. If you have any questions or need help doing anything, please do not hesitate to reach out to PRD leadership — no question is dumb and we are happy to help you.\n\nWelcome to the team! 💜\n\nPlease reply with **"done"** to confirm you have read everything and proceed to your final quiz!`
+        content: `We are incredibly grateful to have you in the Public Relations Department. For any more recent changes please refer to the announcements channel. If you have any questions or need help doing anything, please do not hesitate to reach out to PRD leadership — no question is dumb and we are happy to help you.\n\nWelcome to the team! 💜\n\nClick **Done** below to confirm you have read everything and proceed to your final quiz!`
     }
 ];
 
@@ -81,7 +81,6 @@ const QUESTIONS = [
 ];
 
 const activeSessions = new Map();
-// Track help log messages: userId -> log message id
 const helpMessages = new Map();
 
 module.exports = {
@@ -103,8 +102,7 @@ module.exports = {
         }
 
         try {
-            const embed = buildSectionEmbed(0);
-            await user.send({ embeds: [embed] });
+            await user.send({ embeds: [buildSectionEmbed(0)], components: [buildSectionRow(user.id, 0)] });
 
             activeSessions.set(user.id, {
                 section: 0,
@@ -137,211 +135,295 @@ module.exports = {
         }
     },
 
-    async handleMessage(message, client) {
-        if (message.author.bot) return;
-        if (message.guild) return;
+    async handleButton(interaction, client) {
+        const customId = interaction.customId;
 
-        const userId = message.author.id;
-        const session = activeSessions.get(userId);
-        if (!session) return;
+        // ── SECTION DONE BUTTON ──
+        if (customId.startsWith('section_done_')) {
+            const userId = customId.replace('section_done_', '');
+            if (interaction.user.id !== userId) {
+                return interaction.reply({ content: '❌ This is not your training session.', ephemeral: true });
+            }
 
-        const content = message.content.trim().toLowerCase();
+            const session = activeSessions.get(userId);
+            if (!session) return interaction.reply({ content: '❌ No active session found.', ephemeral: true });
 
-        await message.react('👀').catch(() => {});
+            if (session.waitingForHelp) {
+                return interaction.reply({ content: '⏳ Please wait for your help request to be resolved before continuing.', ephemeral: true });
+            }
 
-        const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+            await interaction.update({ components: [] });
 
-        // Block progress if waiting for help to be resolved
-        if (session.waitingForHelp) {
-            await message.react('⏳').catch(() => {});
-            await message.author.send({
-                embeds: [new EmbedBuilder()
-                    .setDescription('⏳ Please wait — a member of PR Leadership is being notified to help you. You\'ll be able to continue once your help request has been **resolved**.')
-                    .setColor('Orange')]
-            });
-            return;
+            session.section++;
+
+            if (session.section >= SECTIONS.length) {
+                session.phase = 'quiz';
+                session.quizIndex = 0;
+                session.quizAnswers = [];
+
+                const quizIntroEmbed = new EmbedBuilder()
+                    .setTitle('📝 Final Quiz')
+                    .setDescription('Great job completing the training! You will now be asked **8 questions**.\n\nSelect your answer using the buttons below each question.')
+                    .setColor('Purple')
+                    .setTimestamp();
+
+                await interaction.user.send({ embeds: [quizIntroEmbed] });
+                setTimeout(async () => {
+                    await interaction.user.send({ embeds: [buildQuestionEmbed(0)], components: [buildQuizRow(userId, 0)] });
+                }, 1500);
+            } else {
+                await interaction.user.send({ embeds: [buildSectionEmbed(session.section)], components: [buildSectionRow(userId, session.section)] });
+            }
         }
 
-        // ── TRAINING PHASE ──
-        if (session.phase === 'training') {
-            if (content === 'done' || content === 'next') {
-                await message.react('✅').catch(() => {});
-                session.section++;
-
-                if (session.section >= SECTIONS.length) {
-                    session.phase = 'quiz';
-                    session.quizIndex = 0;
-                    session.quizAnswers = [];
-
-                    const quizIntroEmbed = new EmbedBuilder()
-                        .setTitle('📝 Final Quiz')
-                        .setDescription('Great job completing the training! You will now be asked **8 questions**.\n\nReply with **a**, **b**, **c**, or **d** for each question.')
-                        .setColor('Purple')
-                        .setTimestamp();
-
-                    await message.author.send({ embeds: [quizIntroEmbed] });
-                    setTimeout(async () => {
-                        await message.author.send({ embeds: [buildQuestionEmbed(0)] });
-                    }, 1500);
-                } else {
-                    await message.author.send({ embeds: [buildSectionEmbed(session.section)] });
-                }
-
-            } else if (content.includes('help') || content.includes('i need help') || content.includes('confused')) {
-                await message.react('🆘').catch(() => {});
-                session.waitingForHelp = true;
-                session.helpCount++;
-
-                await message.author.send({
-                    embeds: [new EmbedBuilder()
-                        .setTitle('🆘 Help Requested')
-                        .setDescription('No worries! A member of PR Leadership has been notified and will reach out to you shortly.\n\nYou will be able to continue your training once your request has been **resolved**.')
-                        .setColor('Orange')
-                        .setTimestamp()]
-                });
-
-                if (logChannel) {
-                    const row = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`resolve_help_${userId}`)
-                            .setLabel('✅ Mark as Resolved')
-                            .setStyle(ButtonStyle.Success)
-                    );
-
-                    const helpEmbed = new EmbedBuilder()
-                        .setTitle('🆘 Training Help Request')
-                        .setColor('Orange')
-                        .addFields(
-                            { name: 'Trainee', value: `<@${userId}>`, inline: true },
-                            { name: 'Section', value: `${session.section + 1} — ${SECTIONS[session.section].title}`, inline: false },
-                            { name: 'Message', value: message.content, inline: false },
-                            { name: 'Help Count', value: `${session.helpCount}`, inline: true },
-                            { name: 'Date', value: new Date().toLocaleString(), inline: true },
-                            { name: 'Status', value: '🟠 Pending', inline: true }
-                        )
-                        .setTimestamp();
-
-                    const logMsg = await logChannel.send({ embeds: [helpEmbed], components: [row] });
-                    helpMessages.set(userId, logMsg.id);
-                }
-
-            } else {
-                await message.react('❓').catch(() => {});
-                await message.author.send({
-                    embeds: [new EmbedBuilder()
-                        .setDescription('Please reply with **"done"** when you have finished reading, or **"help"** if you need assistance.')
-                        .setColor('Grey')]
-                });
+        // ── SECTION HELP BUTTON ──
+        if (customId.startsWith('section_help_')) {
+            const userId = customId.replace('section_help_', '');
+            if (interaction.user.id !== userId) {
+                return interaction.reply({ content: '❌ This is not your training session.', ephemeral: true });
             }
 
-        // ── QUIZ PHASE ──
-        } else if (session.phase === 'quiz') {
-            const validAnswers = ['a', 'b', 'c', 'd'];
+            const session = activeSessions.get(userId);
+            if (!session) return interaction.reply({ content: '❌ No active session found.', ephemeral: true });
 
-            if (!validAnswers.includes(content)) {
-                await message.react('❓').catch(() => {});
-                await message.author.send({
-                    embeds: [new EmbedBuilder()
-                        .setDescription('Please reply with **a**, **b**, **c**, or **d**.')
-                        .setColor('Grey')]
-                });
-                return;
+            if (session.waitingForHelp) {
+                return interaction.reply({ content: '⏳ Your help request is already pending. Please wait for it to be resolved.', ephemeral: true });
             }
 
-            await message.react('✅').catch(() => {});
+            session.waitingForHelp = true;
+            session.helpCount++;
 
-            const correct = content === QUESTIONS[session.quizIndex].answer;
+            await interaction.update({ components: [] });
+
+            await interaction.user.send({
+                embeds: [new EmbedBuilder()
+                    .setTitle('🆘 Help Requested')
+                    .setDescription('No worries! A member of PR Leadership has been notified and will reach out to you shortly.\n\nYou will be able to continue your training once your request has been **resolved**.')
+                    .setColor('Orange')
+                    .setTimestamp()]
+            });
+
+            const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+            if (logChannel) {
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`resolve_help_${userId}`)
+                        .setLabel('✅ Mark as Resolved')
+                        .setStyle(ButtonStyle.Success)
+                );
+
+                const helpEmbed = new EmbedBuilder()
+                    .setTitle('🆘 Training Help Request')
+                    .setColor('Orange')
+                    .addFields(
+                        { name: 'Trainee', value: `<@${userId}>`, inline: true },
+                        { name: 'Section', value: `${session.section + 1} — ${SECTIONS[session.section].title}`, inline: false },
+                        { name: 'Help Count', value: `${session.helpCount}`, inline: true },
+                        { name: 'Date', value: new Date().toLocaleString(), inline: true },
+                        { name: 'Status', value: '🟠 Pending', inline: true }
+                    )
+                    .setTimestamp();
+
+                const logMsg = await logChannel.send({ embeds: [helpEmbed], components: [row] });
+                helpMessages.set(userId, logMsg.id);
+            }
+        }
+
+        // ── QUIZ ANSWER BUTTONS ──
+        if (customId.startsWith('quiz_')) {
+            const parts = customId.replace('quiz_', '').split('_');
+            const answer = parts[0];
+            const userId = parts.slice(1).join('_');
+
+            if (interaction.user.id !== userId) {
+                return interaction.reply({ content: '❌ This is not your training session.', ephemeral: true });
+            }
+
+            const session = activeSessions.get(userId);
+            if (!session || session.phase !== 'quiz') return;
+
+            await interaction.update({ components: [] });
+
+            const correct = answer === QUESTIONS[session.quizIndex].answer;
             session.quizAnswers.push({
                 question: QUESTIONS[session.quizIndex].question,
-                given: content.toUpperCase(),
+                given: answer.toUpperCase(),
                 correct: QUESTIONS[session.quizIndex].answer.toUpperCase(),
                 passed: correct
             });
 
             session.quizIndex++;
 
+            const resultEmbed = new EmbedBuilder()
+                .setDescription(correct ? '✅ Correct!' : `❌ Incorrect. The correct answer was **${QUESTIONS[session.quizIndex - 1].answer.toUpperCase()}**.`)
+                .setColor(correct ? 'Green' : 'Red');
+
+            await interaction.user.send({ embeds: [resultEmbed] });
+
             if (session.quizIndex < QUESTIONS.length) {
-                const resultEmbed = new EmbedBuilder()
-                    .setDescription(correct ? '✅ Correct!' : `❌ Incorrect. The correct answer was **${QUESTIONS[session.quizIndex - 1].answer.toUpperCase()}**.`)
-                    .setColor(correct ? 'Green' : 'Red');
-                await message.author.send({ embeds: [resultEmbed] });
                 setTimeout(async () => {
-                    await message.author.send({ embeds: [buildQuestionEmbed(session.quizIndex)] });
+                    await interaction.user.send({ embeds: [buildQuestionEmbed(session.quizIndex)], components: [buildQuizRow(userId, session.quizIndex)] });
                 }, 1000);
             } else {
+                // Quiz complete — send results to log with pass/fail buttons
                 const score = session.quizAnswers.filter(a => a.passed).length;
-                const passed = score >= 6;
+                const autoPass = score >= 6;
 
-                const resultEmbed = new EmbedBuilder()
-                    .setTitle(passed ? '🎉 Training Complete!' : '📋 Training Complete')
-                    .setDescription(passed
-                        ? `Congratulations! You passed the quiz with a score of **${score}/8**! 🎉\nWelcome to the PR team — you're all set!`
-                        : `You scored **${score}/8**. Don't worry, a member of PR Leadership will follow up with you shortly!`)
-                    .setColor(passed ? 'Green' : 'Orange')
+                const completionEmbed = new EmbedBuilder()
+                    .setTitle('📋 Quiz Submitted!')
+                    .setDescription(`You have completed the quiz! A member of PR Leadership will review your results shortly.`)
+                    .setColor('Purple')
+                    .addFields({ name: 'Your Score', value: `${score}/8`, inline: true })
                     .setTimestamp();
 
-                await message.author.send({ embeds: [resultEmbed] });
+                await interaction.user.send({ embeds: [completionEmbed] });
 
+                const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
                 if (logChannel) {
                     const breakdown = session.quizAnswers.map((a, i) =>
                         `**Q${i + 1}:** ${a.passed ? '✅' : '❌'} — Answered: **${a.given}** | Correct: **${a.correct}**`
                     ).join('\n');
 
+                    const passFailRow = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`training_pass_${userId}`)
+                            .setLabel('✅ Pass')
+                            .setStyle(ButtonStyle.Success),
+                        new ButtonBuilder()
+                            .setCustomId(`training_fail_${userId}`)
+                            .setLabel('❌ Fail')
+                            .setStyle(ButtonStyle.Danger)
+                    );
+
                     const logEmbed = new EmbedBuilder()
-                        .setTitle('📋 Training Quiz Results')
-                        .setColor(passed ? 'Green' : 'Orange')
+                        .setTitle('📋 Training Quiz Results — Awaiting Review')
+                        .setColor(autoPass ? 'Green' : 'Orange')
                         .addFields(
                             { name: 'Trainee', value: `<@${userId}>`, inline: true },
                             { name: 'Score', value: `${score}/8`, inline: true },
-                            { name: 'Result', value: passed ? '✅ Passed' : '❌ Failed', inline: true },
-                            { name: 'Help Requests', value: `${session.helpCount}`, inline: true },
+                            { name: 'Auto Result', value: autoPass ? '✅ Likely Pass' : '⚠️ Likely Fail', inline: true },
+                            { name: 'Help Requests During Training', value: `${session.helpCount}`, inline: true },
                             { name: 'Date', value: new Date().toLocaleString(), inline: true },
                             { name: 'Question Breakdown', value: breakdown, inline: false }
                         )
                         .setTimestamp();
-                    await logChannel.send({ embeds: [logEmbed] });
-                }
 
-                activeSessions.delete(userId);
-                helpMessages.delete(userId);
+                    await logChannel.send({ embeds: [logEmbed], components: [passFailRow] });
+                }
+            }
+        }
+
+        // ── PASS BUTTON ──
+        if (customId.startsWith('training_pass_')) {
+            const userId = customId.replace('training_pass_', '');
+
+            const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+                .setTitle('📋 Training Quiz Results — ✅ Passed')
+                .setColor('Green')
+                .spliceFields(2, 1, { name: 'Final Result', value: `✅ Passed by ${interaction.user.tag}`, inline: true });
+
+            await interaction.update({ embeds: [updatedEmbed], components: [] });
+
+            try {
+                const user = await client.users.fetch(userId);
+                const passEmbed = new EmbedBuilder()
+                    .setTitle('🎉 Congratulations — You Passed!')
+                    .setDescription(`We are so thrilled to officially welcome you to the **Kavià Café Public Relations Department**! 🎊\n\nYou have successfully completed your training and demonstrated a great understanding of your responsibilities.\n\n**What's next?**\n• You'll be given your official PR role shortly.\n• Head over to the PR server and introduce yourself!\n• Don't hesitate to reach out to PR Leadership if you ever need guidance.\n\nWe're so excited to have you on the team. Welcome aboard! ☕💜`)
+                    .setColor(0x9B59B6)
+                    .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                    .setTimestamp();
+                await user.send({ embeds: [passEmbed] });
+            } catch (err) {
+                console.error('Failed to DM trainee pass result:', err);
+            }
+
+            activeSessions.delete(userId);
+            helpMessages.delete(userId);
+        }
+
+        // ── FAIL BUTTON ──
+        if (customId.startsWith('training_fail_')) {
+            const userId = customId.replace('training_fail_', '');
+            const session = activeSessions.get(userId);
+
+            const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+                .setTitle('📋 Training Quiz Results — ❌ Failed')
+                .setColor('Red')
+                .spliceFields(2, 1, { name: 'Final Result', value: `❌ Failed by ${interaction.user.tag}`, inline: true });
+
+            await interaction.update({ embeds: [updatedEmbed], components: [] });
+
+            try {
+                const user = await client.users.fetch(userId);
+                const failEmbed = new EmbedBuilder()
+                    .setTitle('📋 Training Result')
+                    .setDescription(`Thank you for completing the training, and don't be discouraged! Unfortunately you did not pass this time, but we believe in you. 💜\n\nA member of PR Leadership will be reaching out to support you before your next attempt.\n\n**Your training will now restart from the beginning.**\n\nTake your time to review each section carefully — you've got this! ☕`)
+                    .setColor(0xE74C3C)
+                    .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                    .setTimestamp();
+                await user.send({ embeds: [failEmbed] });
+
+                // Restart training from the top
+                setTimeout(async () => {
+                    activeSessions.set(userId, {
+                        section: 0,
+                        phase: 'training',
+                        quizIndex: 0,
+                        quizAnswers: [],
+                        startedBy: session?.startedBy || 'Unknown',
+                        helpCount: 0,
+                        waitingForHelp: false
+                    });
+                    await user.send({ embeds: [buildSectionEmbed(0)], components: [buildSectionRow(userId, 0)] });
+                }, 2000);
+
+            } catch (err) {
+                console.error('Failed to DM trainee fail result:', err);
+            }
+
+            helpMessages.delete(userId);
+        }
+
+        // ── RESOLVE HELP BUTTON ──
+        if (customId.startsWith('resolve_help_')) {
+            const userId = customId.replace('resolve_help_', '');
+            const session = activeSessions.get(userId);
+
+            if (!session) {
+                return interaction.reply({ content: '❌ This training session is no longer active.', ephemeral: true });
+            }
+
+            session.waitingForHelp = false;
+
+            const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+                .setColor('Green')
+                .spliceFields(4, 1, { name: 'Status', value: `✅ Resolved by ${interaction.user.tag}`, inline: true });
+
+            await interaction.update({ embeds: [updatedEmbed], components: [] });
+
+            try {
+                const user = await client.users.fetch(userId);
+                await user.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('✅ Help Resolved')
+                        .setDescription('Your help request has been resolved! You can now continue your training by clicking **Done** on your current section.')
+                        .setColor('Green')
+                        .setTimestamp()],
+                    components: [buildSectionRow(userId, session.section)]
+                });
+            } catch (err) {
+                console.error('Failed to DM trainee after resolve:', err);
             }
         }
     },
 
-    // Handle the resolve button
-    async handleResolve(interaction, client) {
-        const customId = interaction.customId;
-        if (!customId.startsWith('resolve_help_')) return;
-
-        const userId = customId.replace('resolve_help_', '');
-        const session = activeSessions.get(userId);
-
-        if (!session) {
-            return interaction.reply({ content: '❌ This training session is no longer active.', ephemeral: true });
-        }
-
-        session.waitingForHelp = false;
-
-        // Update the log message
-        const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-            .setColor('Green')
-            .spliceFields(5, 1, { name: 'Status', value: `✅ Resolved by ${interaction.user.tag}`, inline: true });
-
-        await interaction.update({ embeds: [updatedEmbed], components: [] });
-
-        // DM the trainee they can continue
-        try {
-            const user = await client.users.fetch(userId);
-            await user.send({
-                embeds: [new EmbedBuilder()
-                    .setTitle('✅ Help Resolved')
-                    .setDescription('Your help request has been resolved! You can now continue your training by replying with **"done"**.')
-                    .setColor('Green')
-                    .setTimestamp()]
-            });
-        } catch (err) {
-            console.error('Failed to DM trainee after resolve:', err);
-        }
+    async handleMessage(message, client) {
+        if (message.author.bot) return;
+        if (message.guild) return;
+        const session = activeSessions.get(message.author.id);
+        if (!session) return;
+        // Sessions are now button-driven, just react to any DM
+        await message.react('👀').catch(() => {});
     }
 };
 
@@ -350,9 +432,22 @@ function buildSectionEmbed(index) {
     return new EmbedBuilder()
         .setTitle(section.title)
         .setDescription(section.content)
-        .setColor('Purple')
-        .setFooter({ text: `Section ${index + 1} of ${SECTIONS.length} • Reply "done" when ready` })
+        .setColor(0x9B59B6)
+        .setFooter({ text: `Section ${index + 1} of ${SECTIONS.length} • Click Done when ready` })
         .setTimestamp();
+}
+
+function buildSectionRow(userId, index) {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`section_done_${userId}`)
+            .setLabel('✅ Done')
+            .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+            .setCustomId(`section_help_${userId}`)
+            .setLabel('🆘 I Need Help')
+            .setStyle(ButtonStyle.Secondary)
+    );
 }
 
 function buildQuestionEmbed(index) {
@@ -360,7 +455,16 @@ function buildQuestionEmbed(index) {
     return new EmbedBuilder()
         .setTitle(`Question ${index + 1} of ${QUESTIONS.length}`)
         .setDescription(`**${q.question}**\n\n${q.options.join('\n')}`)
-        .setColor('Purple')
-        .setFooter({ text: 'Reply with a, b, c, or d' })
+        .setColor(0x9B59B6)
+        .setFooter({ text: 'Select your answer below' })
         .setTimestamp();
+}
+
+function buildQuizRow(userId, index) {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`quiz_a_${userId}`).setLabel('A').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`quiz_b_${userId}`).setLabel('B').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`quiz_c_${userId}`).setLabel('C').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`quiz_d_${userId}`).setLabel('D').setStyle(ButtonStyle.Primary)
+    );
 }

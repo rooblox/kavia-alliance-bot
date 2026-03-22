@@ -94,12 +94,11 @@ client.on('interactionCreate', async (interaction) => {
         } catch (err) {
             console.error('Error handling claim_rep button:', err);
         }
+        return;
     }
 
-    if (interaction.customId.startsWith('resolve_help_')) {
-        const starttraining = client.commands.get('starttraining');
-        if (starttraining) await starttraining.handleResolve(interaction, client);
-    }
+    const starttraining = client.commands.get('starttraining');
+    if (starttraining) await starttraining.handleButton(interaction, client);
 });
 
 // Handle DM messages for training
