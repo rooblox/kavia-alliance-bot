@@ -144,7 +144,10 @@ module.exports = {
                 const actionLabel = isBlacklist ? 'Blacklist' : 'Termination';
                 const actionColor = isBlacklist ? 0x000000 : 'Red';
 
-                // Send public message in alliance channel
+                const theirRepIds = alliance.theirRepIds || [];
+                const pendingKicks = new Set(theirRepIds);
+
+                // Send notice in alliance channel with I Understand buttons per rep
                 if (publicChannel) {
                     await publicChannel.send({
                         content: `<@&${ALLIED_REPS_ROLE_ID}>`,
@@ -154,122 +157,128 @@ module.exports = {
                                 `<@&${ALLIED_REPS_ROLE_ID}>\n\n` +
                                 `We regret to inform you that Kavià Café will be **${isBlacklist ? 'blacklisting' : 'terminating'}** our alliance partnership with **${groupName}**, effective immediately.\n\n` +
                                 `**Reason:** ${reason}\n\n` +
-                                `${isBlacklist ? 'This means your group will no longer be eligible for future alliances with Kavià Café.' : 'This decision does not reflect any ill intent toward your group. We truly appreciate the time, effort, and partnership we\'ve shared and wish your establishment the very best moving forward.'}\n\n` +
+                                `${isBlacklist
+                                    ? 'This means your group will no longer be eligible for future alliances with Kavià Café.'
+                                    : 'This decision does not reflect any ill intent toward your group. We truly appreciate the time, effort, and partnership we\'ve shared.'
+                                }\n\n` +
                                 `If you would like to appeal this decision, please use the link below.\n` +
                                 `[Submit an Appeal](${APPEAL_LINK})\n\n` +
-                                `Thank you for your understanding,\n**Kavià Café Administration** ☕`
+                                `**Please click the button below to acknowledge this notice. You will be removed from the server once you do so.**\n` +
+                                `If you do not acknowledge within **24 hours**, you will be automatically removed.`
                             )
                             .setColor(actionColor)
                             .setFooter({ text: 'Kavià Café — Public Relations Department' })
                             .setTimestamp()],
+                        components: [new ActionRowBuilder().addComponents(
+                            ...theirRepIds.map(repId =>
+                                new ButtonBuilder()
+                                    .setCustomId(`discipline_understood_${repId}_${groupName.replace(/\s+/g, '_')}_${actionLabel.toLowerCase()}_${rank.replace(/\s+/g, '_')}_${reason.slice(0, 50).replace(/\s+/g, '_')}`)
+                                    .setLabel(`I Understand — <@${repId}>`)
+                                    .setStyle(ButtonStyle.Secondary)
+                            ).slice(0, 5)
+                        )],
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
+
+                    // 24 hour auto-kick for anyone who hasn't acknowledged
+                    setTimeout(async () => {
+                        for (const repId of pendingKicks) {
+                            const member = await interaction.guild.members.fetch(repId).catch(() => null);
+                            if (!member) continue;
+
+                            // DM them before kicking
+                            try {
+                                await member.send({
+                                    embeds: [new EmbedBuilder()
+                                        .setTitle(`${actionLabel} Notice`)
+                                        .setDescription(
+                                            `Greetings, <@${repId}>\n\n` +
+                                            `I'm unfortunately saddened to inform you that your alliance with **Kavià Café** has been **${isBlacklist ? 'blacklisted' : 'terminated'}**, effective immediately.\n\n` +
+                                            `This decision was made after careful consideration and was not made lightly.\n\n` +
+                                            `🗒️ **Reason:** ${reason}\n\n` +
+                                            `We appreciate the time and effort you've contributed during your time as an alliance with **Kavià Café**.\n\n` +
+                                            `If you believe this decision was made in error, please feel free to DM me for clarification or open a ticket.\n\n` +
+                                            `**Regards,**\n` +
+                                            `**${interaction.user.username}**\n` +
+                                            `**${rank}**\n` +
+                                            `**Kavià || Public Relations Team**`
+                                        )
+                                        .setColor(actionColor)
+                                        .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                                        .setTimestamp()]
+                                });
+                            } catch (err) {
+                                console.error(`Failed to DM ${repId} on auto-kick:`, err);
+                            }
+
+                            // Kick
+                            try {
+                                await member.kick(`Alliance ${actionLabel} — auto removed after 24hrs`);
+                            } catch (err) {
+                                console.error(`Failed to auto-kick ${repId}:`, err);
+                            }
+
+                            // Log
+                            const logFetchChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+                            if (logFetchChannel) {
+                                await logFetchChannel.send({
+                                    embeds: [new EmbedBuilder()
+                                        .setTitle('⏰ Auto-Kick — No Acknowledgement')
+                                        .setColor('Orange')
+                                        .addFields(
+                                            { name: 'User', value: `<@${repId}>`, inline: true },
+                                            { name: 'Alliance', value: groupName, inline: true },
+                                            { name: 'Reason', value: 'No acknowledgement within 24 hours', inline: false },
+                                            { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                                        )
+                                        .setTimestamp()]
+                                });
+                            }
+                        }
+
+                        // If all kicked, delete roles and archive channel
+                        if (pendingKicks.size === 0) {
+                            if (alliance.repRoleId) {
+                                const theirRole = interaction.guild.roles.cache.get(alliance.repRoleId);
+                                if (theirRole) await theirRole.delete().catch(console.error);
+                            }
+                            if (alliance.ourRepRoleId) {
+                                const ourRole = interaction.guild.roles.cache.get(alliance.ourRepRoleId);
+                                if (ourRole) await ourRole.delete().catch(console.error);
+                            }
+                        } else {
+                            // Delete roles anyway after auto-kick
+                            if (alliance.repRoleId) {
+                                const theirRole = interaction.guild.roles.cache.get(alliance.repRoleId);
+                                if (theirRole) await theirRole.delete().catch(console.error);
+                            }
+                            if (alliance.ourRepRoleId) {
+                                const ourRole = interaction.guild.roles.cache.get(alliance.ourRepRoleId);
+                                if (ourRole) await ourRole.delete().catch(console.error);
+                            }
+                        }
+
+                        // Archive channel
+                        if (publicChannel) {
+                            await publicChannel.setParent(TERMINATED_CATEGORY_ID, { lockPermissions: false }).catch(console.error);
+                        }
+
+                    }, 24 * 60 * 60 * 1000);
                 }
 
-                // DM and kick their reps
-                const theirRepIds = alliance.theirRepIds || [];
-                const kickResults = [];
-
-                for (const repId of theirRepIds) {
-                    const member = await interaction.guild.members.fetch(repId).catch(() => null);
-                    if (!member) {
-                        kickResults.push({ id: repId, status: 'not found' });
-                        continue;
-                    }
-
-                    // Build DM embed
-                    const dmEmbed = new EmbedBuilder()
-                        .setTitle(`${actionLabel} Notice`)
-                        .setDescription(
-                            `Greetings, <@${repId}>\n\n` +
-                            `I'm unfortunately saddened to inform you that your alliance with **Kavià Café** has been **${isBlacklist ? 'blacklisted' : 'terminated'}**, effective immediately.\n\n` +
-                            `This decision was made after careful consideration and was not made lightly. If you would be kind enough to leave the alliance server I would appreciate it greatly.\n\n` +
-                            `🗒️ **Reason:** ${reason}\n\n` +
-                            `We appreciate the time and effort you've contributed during your time as an alliance with **Kavià Café**.\n\n` +
-                            `If you believe this decision was made in error, please feel free to DM me for clarification or open a ticket.\n\n` +
-                            `**Regards,**\n` +
-                            `**${interaction.user.username}**\n` +
-                            `**${rank}**\n` +
-                            `**Kavià || Public Relations Team**`
-                        )
-                        .setColor(actionColor)
-                        .setFooter({ text: 'Kavià Café — Public Relations Department' })
-                        .setTimestamp();
-
-                    const understandRow = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`discipline_understood_${repId}_${groupName.replace(/\s+/g, '_')}`)
-                            .setLabel('I Understand')
-                            .setStyle(ButtonStyle.Secondary)
-                    );
-
-                    // Try to DM
-                    let dmSuccess = false;
-                    try {
-                        await member.send({ embeds: [dmEmbed], components: [understandRow] });
-                        dmSuccess = true;
-                    } catch (err) {
-                        console.error(`Failed to DM ${member.user.tag}:`, err);
-                        kickResults.push({ id: repId, tag: member.user.tag, status: 'dm failed — not kicked' });
-                        continue;
-                    }
-
-                    // Kick if DM succeeded
-                    try {
-                        await member.kick(`Alliance ${actionLabel}: ${reason}`);
-                        kickResults.push({ id: repId, tag: member.user.tag, status: 'kicked' });
-                    } catch (err) {
-                        console.error(`Failed to kick ${member.user.tag}:`, err);
-                        kickResults.push({ id: repId, tag: member.user.tag, status: 'dm sent but kick failed' });
-                    }
-                }
-
-                // Check if all reps were successfully kicked
-                const allKicked = kickResults.every(r => r.status === 'kicked');
-
-                if (allKicked) {
-                    // Delete both roles
-                    if (alliance.repRoleId) {
-                        const theirRole = interaction.guild.roles.cache.get(alliance.repRoleId);
-                        if (theirRole) await theirRole.delete(`Alliance ${actionLabel}`).catch(console.error);
-                    }
-                    if (alliance.ourRepRoleId) {
-                        const ourRole = interaction.guild.roles.cache.get(alliance.ourRepRoleId);
-                        if (ourRole) await ourRole.delete(`Alliance ${actionLabel}`).catch(console.error);
-                    }
-
-                    // Move channel to archived category
-                    if (publicChannel) {
-                        await publicChannel.setParent(TERMINATED_CATEGORY_ID, { lockPermissions: false }).catch(console.error);
-                    }
-                } else {
-                    // Move channel anyway but note roles not deleted
-                    if (publicChannel) {
-                        await publicChannel.setParent(TERMINATED_CATEGORY_ID, { lockPermissions: false }).catch(console.error);
-                    }
-                }
-
-                // Log kick results
-                const logFetchChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
-                if (logFetchChannel) {
-                    const kickSummary = kickResults.map(r =>
-                        `<@${r.id}> — ${r.status}`
-                    ).join('\n') || 'No reps found';
-
-                    await logFetchChannel.send({
-                        embeds: [new EmbedBuilder()
-                            .setTitle(`📋 ${actionLabel} — Rep Action Summary`)
-                            .setColor(allKicked ? 'Green' : 'Orange')
-                            .addFields(
-                                { name: 'Alliance', value: groupName, inline: true },
-                                { name: 'Action', value: actionLabel, inline: true },
-                                { name: 'Roles Deleted', value: allKicked ? '✅ Yes' : '❌ No — not all reps kicked', inline: true },
-                                { name: 'Channel Archived', value: publicChannel ? '✅ Yes' : '❌ No channel set', inline: true },
-                                { name: 'Rep Results', value: kickSummary, inline: false }
-                            )
-                            .setTimestamp()]
-                    });
-                }
+                // Store pending kicks and action info on client for button handler
+                client._disciplinePending = client._disciplinePending || new Map();
+                client._disciplinePending.set(groupName, {
+                    pendingKicks,
+                    alliance,
+                    actionLabel,
+                    actionColor,
+                    reason,
+                    rank,
+                    interactionUserId: interaction.user.id,
+                    interactionUserName: interaction.user.username,
+                    guildId: interaction.guild.id
+                });
 
                 await deleteAlliance(groupName);
                 await refreshAllianceList(client);
