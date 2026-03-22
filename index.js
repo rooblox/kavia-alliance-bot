@@ -97,6 +97,12 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    if (interaction.customId.startsWith('checkin_confirm_')) {
+        const checkin = client.commands.get('checkin');
+        if (checkin) await checkin.handleButton(interaction, client);
+        return;
+    }
+
     if (interaction.customId.startsWith('topost_')) {
         const topost = client.commands.get('topost');
         if (topost) await topost.handleButton(interaction, client);

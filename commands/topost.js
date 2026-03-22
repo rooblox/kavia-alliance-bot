@@ -3,6 +3,7 @@ const { loadAlliances } = require('../utils/allianceStorage');
 
 const CHECKIN_LOG_CHANNEL_ID = '1482430133561196625';
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
+const STAFF_ROLE_ID = '1485100238715883720';
 
 const activeToposts = new Map();
 
@@ -32,7 +33,7 @@ module.exports = {
     async handleButton(interaction, client) {
         const customId = interaction.customId;
 
-        // ── COMPOSE BUTTON — open modal ──
+        // ── COMPOSE BUTTON ──
         if (customId.startsWith('topost_compose_')) {
             const userId = customId.replace('topost_compose_', '');
             if (interaction.user.id !== userId) {
@@ -91,8 +92,10 @@ module.exports = {
                         const t = toposts.get(`${userId}_${a.welcomeChannelId}`);
                         if (!t) {
                             lines.push(`⚠️ **${a.groupName}** — Failed to send`);
+                        } else if (t.confirmed) {
+                            lines.push(`✅ **${a.groupName}** — Confirmed`);
                         } else if (t.responded) {
-                            lines.push(`✅ **${a.groupName}** — Posted`);
+                            lines.push(`🔵 **${a.groupName}** — Awaiting staff review`);
                         } else if (t.noResponse) {
                             lines.push(`❌ **${a.groupName}** — No response (48hrs)`);
                         } else {
@@ -109,7 +112,6 @@ module.exports = {
                     .setTimestamp();
             };
 
-            // Send tracking embed
             let trackingMessage = null;
             if (logChannel) {
                 trackingMessage = await logChannel.send({
@@ -132,7 +134,6 @@ module.exports = {
                 }
 
                 try {
-                    // Send ping + deadline warning first
                     await channel.send({
                         content: `<@&${ALLIED_REPS_ROLE_ID}>`,
                         embeds: [new EmbedBuilder()
@@ -148,16 +149,14 @@ module.exports = {
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
 
-                    // Send the raw message on its own so its easy to copy
-                    await channel.send({
-                        content: session.message
-                    });
+                    await channel.send({ content: session.message });
 
                     const key = `${userId}_${alliance.welcomeChannelId}`;
                     activeToposts.set(key, {
                         groupName: alliance.groupName,
                         channelId: alliance.welcomeChannelId,
                         responded: false,
+                        confirmed: false,
                         noResponse: false,
                         startedAt: Date.now(),
                         trackingMessageId: trackingMessage?.id,
@@ -177,7 +176,7 @@ module.exports = {
                     setTimeout(async () => {
                         const key = `${userId}_${alliance.welcomeChannelId}`;
                         const topost = activeToposts.get(key);
-                        if (!topost || topost.responded) return;
+                        if (!topost || topost.responded || topost.confirmed) return;
 
                         await channel.send({
                             content: `<@&${ALLIED_REPS_ROLE_ID}>`,
@@ -199,7 +198,7 @@ module.exports = {
                     setTimeout(async () => {
                         const key = `${userId}_${alliance.welcomeChannelId}`;
                         const topost = activeToposts.get(key);
-                        if (!topost || topost.responded) return;
+                        if (!topost || topost.responded || topost.confirmed) return;
 
                         topost.noResponse = true;
 
@@ -279,6 +278,84 @@ module.exports = {
             });
         }
 
+        // ── TOPOST CONFIRM BUTTON ──
+        if (customId.startsWith('topost_confirm_')) {
+            const channelId = customId.replace('topost_confirm_', '');
+
+            const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+            if (!member || !member.roles.cache.has(STAFF_ROLE_ID)) {
+                return interaction.reply({ content: '❌ Only PR Leadership can confirm posted responses.', ephemeral: true });
+            }
+
+            let matchedKey = null;
+            for (const [key, topost] of activeToposts.entries()) {
+                if (topost.channelId === channelId) {
+                    matchedKey = key;
+                    break;
+                }
+            }
+
+            if (!matchedKey) {
+                return interaction.reply({ content: '❌ This session is no longer active.', ephemeral: true });
+            }
+
+            const topost = activeToposts.get(matchedKey);
+            topost.confirmed = true;
+
+            await interaction.update({
+                embeds: [EmbedBuilder.from(interaction.message.embeds[0])
+                    .setColor('Green')
+                    .setTitle('📢 To Post Response — ✅ Confirmed')],
+                components: []
+            });
+
+            // Update tracking embed
+            if (topost.trackingMessageId) {
+                const logChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
+                if (logChannel) {
+                    const trackingMessage = await logChannel.messages.fetch(topost.trackingMessageId).catch(() => null);
+                    if (trackingMessage) {
+                        const sections = ['Restaurants', 'Cafes', 'Others'];
+                        const lines = [];
+
+                        sections.forEach(section => {
+                            const list = topost.alliances.filter(a => a.section === section);
+                            if (!list.length) return;
+                            lines.push(`\n**— ${section} —**`);
+                            list.forEach(a => {
+                                if (!a.welcomeChannelId) {
+                                    lines.push(`⚠️ **${a.groupName}** — No channel set`);
+                                    return;
+                                }
+                                const key = `${topost.userId}_${a.welcomeChannelId}`;
+                                const t = activeToposts.get(key);
+                                if (!t || t.confirmed) {
+                                    lines.push(`✅ **${a.groupName}** — Confirmed`);
+                                } else if (t.responded) {
+                                    lines.push(`🔵 **${a.groupName}** — Awaiting staff review`);
+                                } else if (t.noResponse) {
+                                    lines.push(`❌ **${a.groupName}** — No response (48hrs)`);
+                                } else {
+                                    lines.push(`⏳ **${a.groupName}** — Awaiting post`);
+                                }
+                            });
+                        });
+
+                        await trackingMessage.edit({
+                            embeds: [new EmbedBuilder()
+                                .setTitle('📢 To Post Tracker')
+                                .setDescription(lines.join('\n'))
+                                .setColor(0x9B59B6)
+                                .setFooter({ text: 'Updates automatically' })
+                                .setTimestamp()]
+                        }).catch(() => {});
+                    }
+                }
+            }
+
+            activeToposts.delete(matchedKey);
+        }
+
         // ── CANCEL BUTTON ──
         if (customId.startsWith('topost_cancel_')) {
             const userId = customId.replace('topost_cancel_', '');
@@ -339,7 +416,7 @@ module.exports = {
 
         let matchedKey = null;
         for (const [key, topost] of activeToposts.entries()) {
-            if (topost.channelId === message.channel.id && !topost.responded) {
+            if (topost.channelId === message.channel.id && !topost.responded && !topost.confirmed) {
                 matchedKey = key;
                 break;
             }
@@ -350,8 +427,34 @@ module.exports = {
         const topost = activeToposts.get(matchedKey);
         topost.responded = true;
 
-        await message.react('✅').catch(() => {});
+        await message.react('👀').catch(() => {});
 
+        // Send confirm button pinging staff
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`topost_confirm_${message.channel.id}`)
+                .setLabel('✅ Confirm Posted')
+                .setStyle(ButtonStyle.Success)
+        );
+
+        await message.channel.send({
+            content: `<@&${STAFF_ROLE_ID}>`,
+            embeds: [new EmbedBuilder()
+                .setTitle('📢 To Post — Response Received')
+                .setColor('Blue')
+                .addFields(
+                    { name: 'Alliance', value: topost.groupName, inline: true },
+                    { name: 'Responded By', value: `${message.author.tag}`, inline: true },
+                    { name: 'Message', value: message.content.slice(0, 1024) || 'No text content', inline: false },
+                    { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                )
+                .setFooter({ text: 'Only PR Leadership can confirm this response.' })
+                .setTimestamp()],
+            components: [row],
+            allowedMentions: { roles: [STAFF_ROLE_ID] }
+        });
+
+        // Update tracking to awaiting review
         if (topost.trackingMessageId) {
             const logChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
             if (logChannel) {
@@ -363,7 +466,6 @@ module.exports = {
                     sections.forEach(section => {
                         const list = topost.alliances.filter(a => a.section === section);
                         if (!list.length) return;
-
                         lines.push(`\n**— ${section} —**`);
                         list.forEach(a => {
                             if (!a.welcomeChannelId) {
@@ -372,10 +474,10 @@ module.exports = {
                             }
                             const key = `${topost.userId}_${a.welcomeChannelId}`;
                             const t = activeToposts.get(key);
-                            if (!t) {
-                                lines.push(`✅ **${a.groupName}** — Posted`);
+                            if (!t || t.confirmed) {
+                                lines.push(`✅ **${a.groupName}** — Confirmed`);
                             } else if (t.responded) {
-                                lines.push(`✅ **${a.groupName}** — Posted`);
+                                lines.push(`🔵 **${a.groupName}** — Awaiting staff review`);
                             } else if (t.noResponse) {
                                 lines.push(`❌ **${a.groupName}** — No response (48hrs)`);
                             } else {
@@ -396,18 +498,18 @@ module.exports = {
             }
         }
 
-        activeToposts.delete(matchedKey);
-
+        // Log
         const logChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
         if (logChannel) {
             await logChannel.send({
                 embeds: [new EmbedBuilder()
-                    .setTitle('✅ To Post — Confirmed')
-                    .setColor('Green')
+                    .setTitle('🔵 To Post — Awaiting Staff Review')
+                    .setColor('Blue')
                     .addFields(
                         { name: 'Alliance', value: topost.groupName, inline: true },
-                        { name: 'Confirmed By', value: `${message.author.tag}`, inline: true },
+                        { name: 'Responded By', value: `${message.author.tag}`, inline: true },
                         { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
+                        { name: 'Message', value: message.content.slice(0, 1024) || 'No text content', inline: false },
                         { name: 'Date', value: new Date().toLocaleString(), inline: false }
                     )
                     .setTimestamp()]

@@ -1,9 +1,10 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { loadAlliances } = require('../utils/allianceStorage');
 
 const LOG_CHANNEL_ID = '1482430133561196625';
 const CHECKIN_LOG_CHANNEL_ID = '1482430133561196625';
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
+const STAFF_ROLE_ID = '1485100238715883720';
 
 const activeCheckins = new Map();
 
@@ -43,8 +44,10 @@ module.exports = {
                         const checkin = checkins.get(a.welcomeChannelId);
                         if (!checkin) {
                             lines.push(`✅ **${a.groupName}** — Responded`);
+                        } else if (checkin.confirmed) {
+                            lines.push(`✅ **${a.groupName}** — Confirmed`);
                         } else if (checkin.responded) {
-                            lines.push(`✅ **${a.groupName}** — Responded`);
+                            lines.push(`🔵 **${a.groupName}** — Awaiting staff review`);
                         } else if (checkin.noResponse) {
                             lines.push(`❌ **${a.groupName}** — No response (48hrs)`);
                         } else {
@@ -106,6 +109,7 @@ module.exports = {
                     activeCheckins.set(alliance.welcomeChannelId, {
                         groupName: alliance.groupName,
                         responded: false,
+                        confirmed: false,
                         noResponse: false,
                         messageId: checkinMessage.id,
                         startedAt: Date.now(),
@@ -124,7 +128,7 @@ module.exports = {
                     // 24 hour reminder
                     setTimeout(async () => {
                         const checkin = activeCheckins.get(alliance.welcomeChannelId);
-                        if (!checkin || checkin.responded) return;
+                        if (!checkin || checkin.responded || checkin.confirmed) return;
 
                         await channel.send({
                             content: `<@&${ALLIED_REPS_ROLE_ID}>`,
@@ -133,13 +137,12 @@ module.exports = {
                                 .setColor('Yellow')],
                             allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                         });
-
                     }, 24 * 60 * 60 * 1000);
 
                     // 48 hour timeout
                     setTimeout(async () => {
                         const checkin = activeCheckins.get(alliance.welcomeChannelId);
-                        if (!checkin || checkin.responded) return;
+                        if (!checkin || checkin.responded || checkin.confirmed) return;
 
                         checkin.noResponse = true;
 
@@ -210,17 +213,32 @@ module.exports = {
         }
     },
 
-    async handleCheckinReply(message, client) {
-        if (message.author.bot) return;
-        if (!message.guild) return;
+    async handleButton(interaction, client) {
+        if (!interaction.customId.startsWith('checkin_confirm_')) return;
 
-        const checkin = activeCheckins.get(message.channel.id);
-        if (!checkin || checkin.responded) return;
+        const channelId = interaction.customId.replace('checkin_confirm_', '');
+        const checkin = activeCheckins.get(channelId);
 
-        checkin.responded = true;
+        if (!checkin) {
+            return interaction.reply({ content: '❌ This check-in is no longer active.', ephemeral: true });
+        }
 
-        await message.react('✅').catch(() => {});
+        // Only staff role can confirm
+        const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+        if (!member || !member.roles.cache.has(STAFF_ROLE_ID)) {
+            return interaction.reply({ content: '❌ Only PR Leadership can confirm check-in responses.', ephemeral: true });
+        }
 
+        checkin.confirmed = true;
+
+        await interaction.update({
+            embeds: [EmbedBuilder.from(interaction.message.embeds[0])
+                .setColor('Green')
+                .setTitle('📋 Check-In Response — ✅ Confirmed')],
+            components: []
+        });
+
+        // Update tracking embed
         if (checkin.trackingMessageId) {
             const checkinLogChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
             if (checkinLogChannel) {
@@ -232,7 +250,6 @@ module.exports = {
                     sections.forEach(section => {
                         const list = checkin.alliances.filter(a => a.section === section);
                         if (!list.length) return;
-
                         lines.push(`\n**— ${section} —**`);
                         list.forEach(a => {
                             if (!a.welcomeChannelId) {
@@ -240,10 +257,10 @@ module.exports = {
                                 return;
                             }
                             const c = activeCheckins.get(a.welcomeChannelId);
-                            if (!c) {
-                                lines.push(`✅ **${a.groupName}** — Responded`);
+                            if (!c || c.confirmed) {
+                                lines.push(`✅ **${a.groupName}** — Confirmed`);
                             } else if (c.responded) {
-                                lines.push(`✅ **${a.groupName}** — Responded`);
+                                lines.push(`🔵 **${a.groupName}** — Awaiting staff review`);
                             } else if (c.noResponse) {
                                 lines.push(`❌ **${a.groupName}** — No response (48hrs)`);
                             } else {
@@ -264,13 +281,99 @@ module.exports = {
             }
         }
 
-        activeCheckins.delete(message.channel.id);
+        activeCheckins.delete(channelId);
+    },
 
+    async handleCheckinReply(message, client) {
+        if (message.author.bot) return;
+        if (!message.guild) return;
+
+        // Only accept from users with allied reps role
+        const member = await message.guild.members.fetch(message.author.id).catch(() => null);
+        if (!member) return;
+        if (!member.roles.cache.has(ALLIED_REPS_ROLE_ID)) return;
+
+        const checkin = activeCheckins.get(message.channel.id);
+        if (!checkin || checkin.responded || checkin.confirmed) return;
+
+        checkin.responded = true;
+
+        await message.react('👀').catch(() => {});
+
+        // Send confirm button in channel pinging staff
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`checkin_confirm_${message.channel.id}`)
+                .setLabel('✅ Confirm Response')
+                .setStyle(ButtonStyle.Success)
+        );
+
+        await message.channel.send({
+            content: `<@&${STAFF_ROLE_ID}>`,
+            embeds: [new EmbedBuilder()
+                .setTitle('📋 Check-In Response Received')
+                .setColor('Blue')
+                .addFields(
+                    { name: 'Alliance', value: checkin.groupName, inline: true },
+                    { name: 'Responded By', value: `${message.author.tag}`, inline: true },
+                    { name: 'Response', value: message.content.slice(0, 1024) || 'No text content', inline: false },
+                    { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                )
+                .setFooter({ text: 'Only PR Leadership can confirm this response.' })
+                .setTimestamp()],
+            components: [row],
+            allowedMentions: { roles: [STAFF_ROLE_ID] }
+        });
+
+        // Update tracking to awaiting review
+        if (checkin.trackingMessageId) {
+            const checkinLogChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
+            if (checkinLogChannel) {
+                const trackingMessage = await checkinLogChannel.messages.fetch(checkin.trackingMessageId).catch(() => null);
+                if (trackingMessage) {
+                    const sections = ['Restaurants', 'Cafes', 'Others'];
+                    const lines = [];
+
+                    sections.forEach(section => {
+                        const list = checkin.alliances.filter(a => a.section === section);
+                        if (!list.length) return;
+                        lines.push(`\n**— ${section} —**`);
+                        list.forEach(a => {
+                            if (!a.welcomeChannelId) {
+                                lines.push(`⚠️ **${a.groupName}** — No channel set`);
+                                return;
+                            }
+                            const c = activeCheckins.get(a.welcomeChannelId);
+                            if (!c || c.confirmed) {
+                                lines.push(`✅ **${a.groupName}** — Confirmed`);
+                            } else if (c.responded) {
+                                lines.push(`🔵 **${a.groupName}** — Awaiting staff review`);
+                            } else if (c.noResponse) {
+                                lines.push(`❌ **${a.groupName}** — No response (48hrs)`);
+                            } else {
+                                lines.push(`⏳ **${a.groupName}** — Awaiting response`);
+                            }
+                        });
+                    });
+
+                    await trackingMessage.edit({
+                        embeds: [new EmbedBuilder()
+                            .setTitle('📋 Alliance Check-In Tracker')
+                            .setDescription(lines.join('\n'))
+                            .setColor(0x9B59B6)
+                            .setFooter({ text: 'Updates automatically' })
+                            .setTimestamp()]
+                    }).catch(() => {});
+                }
+            }
+        }
+
+        // Log to channel
         const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
         if (logChannel) {
             const logEmbed = new EmbedBuilder()
-                .setTitle('✅ Check-In Response Received')
-                .setColor('Green')
+                .setTitle('🔵 Check-In Response — Awaiting Review')
+                .setColor('Blue')
                 .addFields(
                     { name: 'Alliance', value: checkin.groupName, inline: true },
                     { name: 'Responded By', value: `${message.author.tag}`, inline: true },
