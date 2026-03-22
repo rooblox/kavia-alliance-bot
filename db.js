@@ -19,8 +19,11 @@ const allianceSchema = new mongoose.Schema({
     discordLink: { type: String, default: 'N/A' },
     robloxLink: { type: String, default: 'N/A' },
     repRoleId: { type: String, default: null },
+    ourRepRoleId: { type: String, default: null },
     welcomeChannelId: { type: String, default: null },
     section: { type: String, enum: ['Restaurants', 'Cafes', 'Others'], required: true },
+    theirRepIds: [{ type: String }],
+    ourRepIds: [{ type: String }],
     strikes: [
         {
             number: Number,

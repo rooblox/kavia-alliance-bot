@@ -1,10 +1,11 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { findAlliance, saveAlliance, deleteAlliance } = require('../utils/allianceStorage');
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
 
 const APPEAL_LINK = 'https://forms.gle/h3jUfsMkkzNSdcww8';
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 const TERMINATED_CATEGORY_ID = '1428837884252786819';
+const LOG_CHANNEL_ID = '1462580398935642144';
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -22,12 +23,17 @@ module.exports = {
                     { name: 'Strike 1', value: 'strike1' },
                     { name: 'Strike 2', value: 'strike2' },
                     { name: 'Termination', value: 'termination' },
+                    { name: 'Blacklist', value: 'blacklist' },
                     { name: 'Remove Strike', value: 'remove-strike' }
                 ))
         .addStringOption(option =>
             option.setName('reason')
                 .setDescription('Reason for the action')
                 .setRequired(true))
+        .addStringOption(option =>
+            option.setName('rank')
+                .setDescription('Your rank (shown in DM to reps on termination/blacklist)')
+                .setRequired(false))
         .addIntegerOption(option =>
             option.setName('strike_number')
                 .setDescription('Strike number to remove (required if removing strike)'))
@@ -48,6 +54,7 @@ module.exports = {
             const groupName = interaction.options.getString('group_name');
             const action = interaction.options.getString('action');
             const reason = interaction.options.getString('reason');
+            const rank = interaction.options.getString('rank') || 'PR Staff';
             const strikeNumber = interaction.options.getInteger('strike_number');
             const notes = interaction.options.getString('notes') || 'N/A';
             const approvedBy = interaction.options.getString('approved_by') || 'N/A';
@@ -131,35 +138,137 @@ module.exports = {
                 }
             }
 
-            // ── Termination ──
-            if (action === 'termination') {
+            // ── Termination or Blacklist ──
+            if (action === 'termination' || action === 'blacklist') {
+                const isBlacklist = action === 'blacklist';
+                const actionLabel = isBlacklist ? 'Blacklist' : 'Termination';
+                const actionColor = isBlacklist ? 0x000000 : 'Red';
+
+                // Send public message in alliance channel
                 if (publicChannel) {
                     await publicChannel.send({
                         content: `<@&${ALLIED_REPS_ROLE_ID}>`,
                         embeds: [new EmbedBuilder()
-                            .setTitle(`📢 Alliance Termination — ${groupName}`)
+                            .setTitle(`📢 Alliance ${actionLabel} — ${groupName}`)
                             .setDescription(
                                 `<@&${ALLIED_REPS_ROLE_ID}>\n\n` +
-                                `We regret to inform you that Kavià Café will be **terminating** our alliance partnership with **${groupName}**, effective immediately.\n\n` +
+                                `We regret to inform you that Kavià Café will be **${isBlacklist ? 'blacklisting' : 'terminating'}** our alliance partnership with **${groupName}**, effective immediately.\n\n` +
                                 `**Reason:** ${reason}\n\n` +
-                                `This decision does not reflect any ill intent toward your group. We truly appreciate the time, effort, and partnership we've shared and wish your establishment the very best moving forward.\n\n` +
+                                `${isBlacklist ? 'This means your group will no longer be eligible for future alliances with Kavià Café.' : 'This decision does not reflect any ill intent toward your group. We truly appreciate the time, effort, and partnership we\'ve shared and wish your establishment the very best moving forward.'}\n\n` +
                                 `If you would like to appeal this decision, please use the link below.\n` +
                                 `[Submit an Appeal](${APPEAL_LINK})\n\n` +
                                 `Thank you for your understanding,\n**Kavià Café Administration** ☕`
                             )
-                            .setColor('Red')
+                            .setColor(actionColor)
                             .setFooter({ text: 'Kavià Café — Public Relations Department' })
                             .setTimestamp()],
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
+                }
 
-                    // Move channel to terminated category
-                    try {
-                        await publicChannel.setParent(TERMINATED_CATEGORY_ID, { lockPermissions: false });
-                        console.log(`✅ Moved ${groupName} channel to terminated category.`);
-                    } catch (err) {
-                        console.error(`❌ Failed to move channel to terminated category:`, err);
+                // DM and kick their reps
+                const theirRepIds = alliance.theirRepIds || [];
+                const kickResults = [];
+
+                for (const repId of theirRepIds) {
+                    const member = await interaction.guild.members.fetch(repId).catch(() => null);
+                    if (!member) {
+                        kickResults.push({ id: repId, status: 'not found' });
+                        continue;
                     }
+
+                    // Build DM embed
+                    const dmEmbed = new EmbedBuilder()
+                        .setTitle(`${actionLabel} Notice`)
+                        .setDescription(
+                            `Greetings, <@${repId}>\n\n` +
+                            `I'm unfortunately saddened to inform you that your alliance with **Kavià Café** has been **${isBlacklist ? 'blacklisted' : 'terminated'}**, effective immediately.\n\n` +
+                            `This decision was made after careful consideration and was not made lightly. If you would be kind enough to leave the alliance server I would appreciate it greatly.\n\n` +
+                            `🗒️ **Reason:** ${reason}\n\n` +
+                            `We appreciate the time and effort you've contributed during your time as an alliance with **Kavià Café**.\n\n` +
+                            `If you believe this decision was made in error, please feel free to DM me for clarification or open a ticket.\n\n` +
+                            `**Regards,**\n` +
+                            `**${interaction.user.username}**\n` +
+                            `**${rank}**\n` +
+                            `**Kavià || Public Relations Team**`
+                        )
+                        .setColor(actionColor)
+                        .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                        .setTimestamp();
+
+                    const understandRow = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`discipline_understood_${repId}_${groupName.replace(/\s+/g, '_')}`)
+                            .setLabel('I Understand')
+                            .setStyle(ButtonStyle.Secondary)
+                    );
+
+                    // Try to DM
+                    let dmSuccess = false;
+                    try {
+                        await member.send({ embeds: [dmEmbed], components: [understandRow] });
+                        dmSuccess = true;
+                    } catch (err) {
+                        console.error(`Failed to DM ${member.user.tag}:`, err);
+                        kickResults.push({ id: repId, tag: member.user.tag, status: 'dm failed — not kicked' });
+                        continue;
+                    }
+
+                    // Kick if DM succeeded
+                    try {
+                        await member.kick(`Alliance ${actionLabel}: ${reason}`);
+                        kickResults.push({ id: repId, tag: member.user.tag, status: 'kicked' });
+                    } catch (err) {
+                        console.error(`Failed to kick ${member.user.tag}:`, err);
+                        kickResults.push({ id: repId, tag: member.user.tag, status: 'dm sent but kick failed' });
+                    }
+                }
+
+                // Check if all reps were successfully kicked
+                const allKicked = kickResults.every(r => r.status === 'kicked');
+
+                if (allKicked) {
+                    // Delete both roles
+                    if (alliance.repRoleId) {
+                        const theirRole = interaction.guild.roles.cache.get(alliance.repRoleId);
+                        if (theirRole) await theirRole.delete(`Alliance ${actionLabel}`).catch(console.error);
+                    }
+                    if (alliance.ourRepRoleId) {
+                        const ourRole = interaction.guild.roles.cache.get(alliance.ourRepRoleId);
+                        if (ourRole) await ourRole.delete(`Alliance ${actionLabel}`).catch(console.error);
+                    }
+
+                    // Move channel to archived category
+                    if (publicChannel) {
+                        await publicChannel.setParent(TERMINATED_CATEGORY_ID, { lockPermissions: false }).catch(console.error);
+                    }
+                } else {
+                    // Move channel anyway but note roles not deleted
+                    if (publicChannel) {
+                        await publicChannel.setParent(TERMINATED_CATEGORY_ID, { lockPermissions: false }).catch(console.error);
+                    }
+                }
+
+                // Log kick results
+                const logFetchChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+                if (logFetchChannel) {
+                    const kickSummary = kickResults.map(r =>
+                        `<@${r.id}> — ${r.status}`
+                    ).join('\n') || 'No reps found';
+
+                    await logFetchChannel.send({
+                        embeds: [new EmbedBuilder()
+                            .setTitle(`📋 ${actionLabel} — Rep Action Summary`)
+                            .setColor(allKicked ? 'Green' : 'Orange')
+                            .addFields(
+                                { name: 'Alliance', value: groupName, inline: true },
+                                { name: 'Action', value: actionLabel, inline: true },
+                                { name: 'Roles Deleted', value: allKicked ? '✅ Yes' : '❌ No — not all reps kicked', inline: true },
+                                { name: 'Channel Archived', value: publicChannel ? '✅ Yes' : '❌ No channel set', inline: true },
+                                { name: 'Rep Results', value: kickSummary, inline: false }
+                            )
+                            .setTimestamp()]
+                    });
                 }
 
                 await deleteAlliance(groupName);
@@ -170,13 +279,13 @@ module.exports = {
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
                     .setTitle('☕ | Kavia Café — Alliance / Termination & Strike Log')
-                    .setColor(action === 'termination' ? 'Red' : 'Orange')
+                    .setColor(action === 'termination' ? 'Red' : action === 'blacklist' ? 0x000000 : 'Orange')
                     .addFields(
                         { name: '📅 Date', value: new Date().toLocaleString() },
                         { name: '🏛️ Alliance Name', value: groupName },
                         { name: '🔗 Group Link', value: alliance.robloxLink || 'N/A' },
                         { name: '👤 Logged By', value: interaction.user.tag },
-                        { name: '⚠️ Action Taken', value: action === 'strike1' ? 'Strike 1' : action === 'strike2' ? 'Strike 2' : 'Termination' },
+                        { name: '⚠️ Action Taken', value: action === 'strike1' ? 'Strike 1' : action === 'strike2' ? 'Strike 2' : action === 'blacklist' ? 'Blacklist' : 'Termination' },
                         { name: '📝 Reason', value: reason },
                         { name: '💬 Notes / Evidence', value: notes },
                         { name: '✅ Decision Approved By', value: approvedBy },

@@ -1,10 +1,11 @@
 require('dotenv').config();
 const fs = require('fs');
-const { Client, Collection, GatewayIntentBits, REST, Routes } = require('discord.js');
+const { Client, Collection, GatewayIntentBits, REST, Routes, EmbedBuilder } = require('discord.js');
 const { connectDB } = require('./db');
 
 const ALLOWED_ROLE_ID = '1485100238715883720';
 const CLIENT_ID = process.env.CLIENT_ID;
+const LOG_CHANNEL_ID = '1462580398935642144';
 
 const client = new Client({
     intents: [
@@ -85,7 +86,6 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId === 'claim_rep') {
         try {
             const originalEmbed = interaction.message.embeds[0];
-            const { EmbedBuilder } = require('discord.js');
             const updatedEmbed = EmbedBuilder.from(originalEmbed)
                 .setColor('Grey')
                 .setTitle('📥 Rep Request — Claimed')
@@ -112,6 +112,31 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId.startsWith('topost_')) {
         const topost = client.commands.get('topost');
         if (topost) await topost.handleButton(interaction, client);
+        return;
+    }
+
+    if (interaction.customId.startsWith('discipline_understood_')) {
+        const parts = interaction.customId.replace('discipline_understood_', '').split('_');
+        const userId = parts[0];
+        const groupName = parts.slice(1).join('_').replace(/_/g, ' ');
+
+        await interaction.update({ components: [] });
+
+        const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+        if (logChannel) {
+            await logChannel.send({
+                embeds: [new EmbedBuilder()
+                    .setTitle('✅ Discipline Notice Acknowledged')
+                    .setColor('Green')
+                    .addFields(
+                        { name: 'User', value: `<@${userId}>`, inline: true },
+                        { name: 'Alliance', value: groupName, inline: true },
+                        { name: 'Acknowledged By', value: `${interaction.user.tag}`, inline: true },
+                        { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                    )
+                    .setTimestamp()]
+            });
+        }
         return;
     }
 
