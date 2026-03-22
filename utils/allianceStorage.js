@@ -1,28 +1,23 @@
-const fs = require('fs');
-const path = require('path');
+const { Alliance } = require('../db');
 
-const filePath = path.join(__dirname, '../alliances.json');
-
-function loadAlliances() {
-    try {
-        if (!fs.existsSync(filePath)) return [];
-        const data = fs.readFileSync(filePath, 'utf8');
-        return JSON.parse(data);
-    } catch (err) {
-        console.error('Failed to load alliances:', err);
-        return [];
-    }
+async function loadAlliances() {
+    return await Alliance.find({});
 }
 
-function saveAlliances(alliances) {
-    try {
-        fs.writeFileSync(filePath, JSON.stringify(alliances, null, 4), 'utf8');
-    } catch (err) {
-        console.error('Failed to save alliances:', err);
-    }
+async function saveAlliance(data) {
+    return await Alliance.findOneAndUpdate(
+        { groupName: data.groupName },
+        data,
+        { upsert: true, new: true }
+    );
 }
 
-module.exports = {
-    loadAlliances,
-    saveAlliances
-};
+async function deleteAlliance(groupName) {
+    return await Alliance.findOneAndDelete({ groupName });
+}
+
+async function findAlliance(groupName) {
+    return await Alliance.findOne({ groupName });
+}
+
+module.exports = { loadAlliances, saveAlliance, deleteAlliance, findAlliance };

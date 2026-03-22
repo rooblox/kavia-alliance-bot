@@ -3,9 +3,8 @@ const { SlashCommandBuilder } = require('discord.js');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('ping')
-        .setDescription('Replies with Pong!'),
+        .setDescription('Check if the bot is online'),
     async execute(interaction) {
-        // Must reply to the interaction
-        await interaction.reply('Pong!');
-    },
+        await interaction.reply({ content: '🏓 Pong!', ephemeral: true });
+    }
 };
