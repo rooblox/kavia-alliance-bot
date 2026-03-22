@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, ChannelType } = require('discord.js');
+const { SlashCommandBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
 const { findAlliance, saveAlliance } = require('../utils/allianceStorage');
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
 
@@ -10,74 +10,150 @@ module.exports = {
             option.setName('group_name')
                 .setDescription('The alliance group name to edit')
                 .setRequired(true))
-        .addStringOption(option =>
-            option.setName('our_reps')
-                .setDescription('Updated our reps, mention them separated by space'))
-        .addStringOption(option =>
-            option.setName('their_reps')
-                .setDescription('Updated their reps, mention them separated by space'))
+        .addUserOption(option =>
+            option.setName('their_rep_1')
+                .setDescription('Update their first rep'))
+        .addUserOption(option =>
+            option.setName('their_rep_2')
+                .setDescription('Update their second rep'))
+        .addUserOption(option =>
+            option.setName('our_rep_1')
+                .setDescription('Update our first rep'))
+        .addUserOption(option =>
+            option.setName('our_rep_2')
+                .setDescription('Update our second rep'))
         .addStringOption(option =>
             option.setName('discord_link')
                 .setDescription('Updated Discord link'))
         .addStringOption(option =>
             option.setName('roblox_link')
                 .setDescription('Updated Roblox link'))
-        .addRoleOption(option =>
-            option.setName('rep_role')
-                .setDescription('Updated role to ping for reps'))
-        .addChannelOption(option =>
-            option.setName('welcome_channel')
-                .setDescription('Updated channel for welcome message')
-                .addChannelTypes(ChannelType.GuildText)),
+        .addStringOption(option =>
+            option.setName('group_name_new')
+                .setDescription('Rename the alliance')),
 
     async execute(interaction, client) {
         await interaction.deferReply({ ephemeral: true });
 
         try {
             const groupName = interaction.options.getString('group_name');
-            const ourReps = interaction.options.getString('our_reps');
-            const theirReps = interaction.options.getString('their_reps');
+            const theirRep1 = interaction.options.getMember('their_rep_1');
+            const theirRep2 = interaction.options.getMember('their_rep_2');
+            const ourRep1 = interaction.options.getMember('our_rep_1');
+            const ourRep2 = interaction.options.getMember('our_rep_2');
             const discordLink = interaction.options.getString('discord_link');
             const robloxLink = interaction.options.getString('roblox_link');
-            const repRole = interaction.options.getRole('rep_role');
-            const welcomeChannel = interaction.options.getChannel('welcome_channel');
+            const newGroupName = interaction.options.getString('group_name_new');
 
             const alliance = await findAlliance(groupName);
             if (!alliance) return await interaction.editReply(`❌ Alliance **${groupName}** not found.`);
 
-            if (ourReps) alliance.ourReps = ourReps;
-            if (theirReps) alliance.theirReps = theirReps;
+            const guild = interaction.guild;
+
+            // ── Update their reps ──
+            if (theirRep1 || theirRep2) {
+                // Remove role from old their reps
+                const oldTheirRepIds = alliance.theirRepIds || [];
+                for (const repId of oldTheirRepIds) {
+                    const member = await guild.members.fetch(repId).catch(() => null);
+                    if (member && alliance.repRoleId) {
+                        await member.roles.remove(alliance.repRoleId).catch(console.error);
+                    }
+                }
+
+                // Assign role to new their reps
+                const newTheirRepIds = [];
+                if (theirRep1) {
+                    if (alliance.repRoleId) await theirRep1.roles.add(alliance.repRoleId).catch(console.error);
+                    newTheirRepIds.push(theirRep1.id);
+                }
+                if (theirRep2) {
+                    if (alliance.repRoleId) await theirRep2.roles.add(alliance.repRoleId).catch(console.error);
+                    newTheirRepIds.push(theirRep2.id);
+                }
+
+                alliance.theirRepIds = newTheirRepIds;
+                alliance.theirReps = newTheirRepIds.map(id => `<@${id}>`).join(' ');
+            }
+
+            // ── Update our reps ──
+            if (ourRep1 || ourRep2) {
+                // Remove role from old our reps
+                const oldOurRepIds = alliance.ourRepIds || [];
+                for (const repId of oldOurRepIds) {
+                    const member = await guild.members.fetch(repId).catch(() => null);
+                    if (member && alliance.ourRepRoleId) {
+                        await member.roles.remove(alliance.ourRepRoleId).catch(console.error);
+                    }
+                }
+
+                // Assign role to new our reps
+                const newOurRepIds = [];
+                if (ourRep1) {
+                    if (alliance.ourRepRoleId) await ourRep1.roles.add(alliance.ourRepRoleId).catch(console.error);
+                    newOurRepIds.push(ourRep1.id);
+                }
+                if (ourRep2) {
+                    if (alliance.ourRepRoleId) await ourRep2.roles.add(alliance.ourRepRoleId).catch(console.error);
+                    newOurRepIds.push(ourRep2.id);
+                }
+
+                alliance.ourRepIds = newOurRepIds;
+                alliance.ourReps = newOurRepIds.map(id => `<@${id}>`).join(' ');
+            }
+
+            // ── Update other fields ──
             if (discordLink) alliance.discordLink = discordLink;
             if (robloxLink) alliance.robloxLink = robloxLink;
-            if (repRole) alliance.repRoleId = repRole.id;
-            if (welcomeChannel) alliance.welcomeChannelId = welcomeChannel.id;
 
-            await saveAlliance(alliance);
+            // ── Rename alliance if requested ──
+            if (newGroupName) {
+                // Rename their role
+                if (alliance.repRoleId) {
+                    const theirRole = guild.roles.cache.get(alliance.repRoleId);
+                    if (theirRole) await theirRole.setName(newGroupName).catch(console.error);
+                }
+                // Rename our role
+                if (alliance.ourRepRoleId) {
+                    const ourRole = guild.roles.cache.get(alliance.ourRepRoleId);
+                    if (ourRole) await ourRole.setName(`Rep Pair | ${newGroupName}`).catch(console.error);
+                }
+                // Rename channel
+                if (alliance.welcomeChannelId) {
+                    const channel = await client.channels.fetch(alliance.welcomeChannelId).catch(() => null);
+                    if (channel) await channel.setName(newGroupName.toLowerCase().replace(/\s+/g, '-')).catch(console.error);
+                }
 
-            if (welcomeChannel) {
-                const repsArray = (ourReps || alliance.ourReps).split(' ');
-                const welcomeMessage = `:tada: **Welcome Updated Alliance! | Kavi Café x ${groupName}** :tada:
+                alliance.groupName = newGroupName;
+            }
 
-We're excited to continue our alliance with Kavi Café! :star2:
+            // ── Send updated welcome message if reps changed ──
+            if ((ourRep1 || ourRep2) && alliance.welcomeChannelId) {
+                const channel = await client.channels.fetch(alliance.welcomeChannelId).catch(() => null);
+                if (channel) {
+                    const ourRepsArray = [ourRep1, ourRep2].filter(Boolean);
+                    const welcomeMessage = `:tada: **Updated Representative Pair! | Kavi Café x ${newGroupName || groupName}** :tada:
 
-:speech_balloon: **Questions & Support**
-If you have any questions, concerns, or suggestions, this is the perfect place to share them.
+We'd like to introduce your updated Kavi Café representative pair!
 
 :busts_in_silhouette: **Your Representative Pair**
 Please meet your Kavi Café representatives:
 
-**• ${repsArray[0] || ''}**
-**• ${repsArray[1] || ''}**
+**• ${ourRepsArray[0] ? `<@${ourRepsArray[0].id}>` : 'TBD'}**
+**• ${ourRepsArray[1] ? `<@${ourRepsArray[1].id}>` : 'TBD'}**
 
-:handshake: **Looking Ahead**
-We're so excited to continue building a strong relationship.
+:handshake: We look forward to continuing our strong partnership!
 
-:coffee::sparkles: Cheers to our ongoing partnership between **Kavi Café** and **${groupName}**! :sparkles::coffee:`;
-                await welcomeChannel.send({ content: welcomeMessage });
+:coffee::sparkles: Thank you for being an amazing alliance — **Kavi Café** appreciates you! :sparkles::coffee:`;
+                    await channel.send({ content: welcomeMessage });
+                }
             }
 
+            await saveAlliance(alliance);
             await refreshAllianceList(client);
+
             await interaction.editReply(`✅ Alliance **${groupName}** successfully updated!`);
+
         } catch (err) {
             console.error('Error executing alliance-edit:', err);
             if (interaction.deferred || interaction.replied) {

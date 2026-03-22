@@ -128,15 +128,15 @@ module.exports = {
 
             // ── Send welcome message ──
             const ourRepsArray = [ourRep1, ourRep2].filter(Boolean);
-            const welcomeMessage = `:tada: **Welcome New Alliance! | Kavi Café x ${groupName}** :tada:
+            const welcomeMessage = `:tada: **Welcome New Alliance! | Kavia Café x ${groupName}** :tada:
 
-We're thrilled to officially welcome your community into an alliance with Kavi Café! :star2:
+We're thrilled to officially welcome your community into an alliance with Kavia Café! :star2:
 
 :speech_balloon: **Questions & Support**
 If you have any questions, concerns, or suggestions, this is the perfect place to share them.
 
 :busts_in_silhouette: **Your Representative Pair**
-Please meet your Kavi Café representatives:
+Please meet your Kavia Café representatives:
 
 **• ${ourRepsArray[0] ? `<@${ourRepsArray[0].id}>` : 'TBD'}**
 **• ${ourRepsArray[1] ? `<@${ourRepsArray[1].id}>` : 'TBD'}**
@@ -144,7 +144,7 @@ Please meet your Kavi Café representatives:
 :handshake: **Looking Ahead**
 We're so excited to be working together and building a strong relationship.
 
-:coffee::sparkles: Here's to a successful partnership between **Kavi Café** and **${groupName}**! :sparkles::coffee:`;
+:coffee::sparkles: Here's to a successful partnership between **Kavia Café** and **${groupName}**! :sparkles::coffee:`;
 
             await channel.send({ content: welcomeMessage });
 
