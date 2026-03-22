@@ -101,10 +101,18 @@ client.on('interactionCreate', async (interaction) => {
     if (starttraining) await starttraining.handleButton(interaction, client);
 });
 
-// Handle DM messages for training
+// Handle messages
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
-    if (message.guild) return;
+
+    // Handle checkin replies (guild messages)
+    if (message.guild) {
+        const checkin = client.commands.get('checkin');
+        if (checkin) await checkin.handleCheckinReply(message, client);
+        return;
+    }
+
+    // Handle DM messages for training
     const starttraining = client.commands.get('starttraining');
     if (starttraining) await starttraining.handleMessage(message, client);
 });
