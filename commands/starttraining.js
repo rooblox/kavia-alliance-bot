@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const LOG_CHANNEL_ID = '1485119755206791289';
 
@@ -80,8 +80,9 @@ const QUESTIONS = [
     }
 ];
 
-// Store active training sessions: userId -> session data
 const activeSessions = new Map();
+// Track help log messages: userId -> log message id
+const helpMessages = new Map();
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -102,23 +103,21 @@ module.exports = {
         }
 
         try {
-            // Send first section
             const embed = buildSectionEmbed(0);
             await user.send({ embeds: [embed] });
 
-            // Store session
             activeSessions.set(user.id, {
                 section: 0,
-                phase: 'training', // 'training' or 'quiz'
+                phase: 'training',
                 quizIndex: 0,
                 quizAnswers: [],
                 startedBy: interaction.user.tag,
-                helpCount: 0
+                helpCount: 0,
+                waitingForHelp: false
             });
 
             await interaction.editReply(`✅ Training started for **${user.tag}**! Section 1 has been sent to their DMs.`);
 
-            // Log to channel
             const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
@@ -138,10 +137,9 @@ module.exports = {
         }
     },
 
-    // Handle incoming DMs for training
     async handleMessage(message, client) {
         if (message.author.bot) return;
-        if (message.guild) return; // Only handle DMs
+        if (message.guild) return;
 
         const userId = message.author.id;
         const session = activeSessions.get(userId);
@@ -149,10 +147,20 @@ module.exports = {
 
         const content = message.content.trim().toLowerCase();
 
-        // React to every message
         await message.react('👀').catch(() => {});
 
         const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+
+        // Block progress if waiting for help to be resolved
+        if (session.waitingForHelp) {
+            await message.react('⏳').catch(() => {});
+            await message.author.send({
+                embeds: [new EmbedBuilder()
+                    .setDescription('⏳ Please wait — a member of PR Leadership is being notified to help you. You\'ll be able to continue once your help request has been **resolved**.')
+                    .setColor('Orange')]
+            });
+            return;
+        }
 
         // ── TRAINING PHASE ──
         if (session.phase === 'training') {
@@ -161,7 +169,6 @@ module.exports = {
                 session.section++;
 
                 if (session.section >= SECTIONS.length) {
-                    // Move to quiz
                     session.phase = 'quiz';
                     session.quizIndex = 0;
                     session.quizAnswers = [];
@@ -177,24 +184,30 @@ module.exports = {
                         await message.author.send({ embeds: [buildQuestionEmbed(0)] });
                     }, 1500);
                 } else {
-                    // Send next section
-                    const embed = buildSectionEmbed(session.section);
-                    await message.author.send({ embeds: [embed] });
+                    await message.author.send({ embeds: [buildSectionEmbed(session.section)] });
                 }
 
             } else if (content.includes('help') || content.includes('i need help') || content.includes('confused')) {
                 await message.react('🆘').catch(() => {});
+                session.waitingForHelp = true;
                 session.helpCount++;
 
                 await message.author.send({
                     embeds: [new EmbedBuilder()
                         .setTitle('🆘 Help Requested')
-                        .setDescription('No worries! A member of PR Leadership has been notified and will reach out to you shortly. Feel free to reply with **"done"** when you\'re ready to continue.')
+                        .setDescription('No worries! A member of PR Leadership has been notified and will reach out to you shortly.\n\nYou will be able to continue your training once your request has been **resolved**.')
                         .setColor('Orange')
                         .setTimestamp()]
                 });
 
                 if (logChannel) {
+                    const row = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`resolve_help_${userId}`)
+                            .setLabel('✅ Mark as Resolved')
+                            .setStyle(ButtonStyle.Success)
+                    );
+
                     const helpEmbed = new EmbedBuilder()
                         .setTitle('🆘 Training Help Request')
                         .setColor('Orange')
@@ -203,11 +216,15 @@ module.exports = {
                             { name: 'Section', value: `${session.section + 1} — ${SECTIONS[session.section].title}`, inline: false },
                             { name: 'Message', value: message.content, inline: false },
                             { name: 'Help Count', value: `${session.helpCount}`, inline: true },
-                            { name: 'Date', value: new Date().toLocaleString(), inline: true }
+                            { name: 'Date', value: new Date().toLocaleString(), inline: true },
+                            { name: 'Status', value: '🟠 Pending', inline: true }
                         )
                         .setTimestamp();
-                    await logChannel.send({ embeds: [helpEmbed] });
+
+                    const logMsg = await logChannel.send({ embeds: [helpEmbed], components: [row] });
+                    helpMessages.set(userId, logMsg.id);
                 }
+
             } else {
                 await message.react('❓').catch(() => {});
                 await message.author.send({
@@ -244,7 +261,6 @@ module.exports = {
             session.quizIndex++;
 
             if (session.quizIndex < QUESTIONS.length) {
-                // Send next question
                 const resultEmbed = new EmbedBuilder()
                     .setDescription(correct ? '✅ Correct!' : `❌ Incorrect. The correct answer was **${QUESTIONS[session.quizIndex - 1].answer.toUpperCase()}**.`)
                     .setColor(correct ? 'Green' : 'Red');
@@ -253,7 +269,6 @@ module.exports = {
                     await message.author.send({ embeds: [buildQuestionEmbed(session.quizIndex)] });
                 }, 1000);
             } else {
-                // Quiz complete
                 const score = session.quizAnswers.filter(a => a.passed).length;
                 const passed = score >= 6;
 
@@ -267,7 +282,6 @@ module.exports = {
 
                 await message.author.send({ embeds: [resultEmbed] });
 
-                // Log results
                 if (logChannel) {
                     const breakdown = session.quizAnswers.map((a, i) =>
                         `**Q${i + 1}:** ${a.passed ? '✅' : '❌'} — Answered: **${a.given}** | Correct: **${a.correct}**`
@@ -289,7 +303,44 @@ module.exports = {
                 }
 
                 activeSessions.delete(userId);
+                helpMessages.delete(userId);
             }
+        }
+    },
+
+    // Handle the resolve button
+    async handleResolve(interaction, client) {
+        const customId = interaction.customId;
+        if (!customId.startsWith('resolve_help_')) return;
+
+        const userId = customId.replace('resolve_help_', '');
+        const session = activeSessions.get(userId);
+
+        if (!session) {
+            return interaction.reply({ content: '❌ This training session is no longer active.', ephemeral: true });
+        }
+
+        session.waitingForHelp = false;
+
+        // Update the log message
+        const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+            .setColor('Green')
+            .spliceFields(5, 1, { name: 'Status', value: `✅ Resolved by ${interaction.user.tag}`, inline: true });
+
+        await interaction.update({ embeds: [updatedEmbed], components: [] });
+
+        // DM the trainee they can continue
+        try {
+            const user = await client.users.fetch(userId);
+            await user.send({
+                embeds: [new EmbedBuilder()
+                    .setTitle('✅ Help Resolved')
+                    .setDescription('Your help request has been resolved! You can now continue your training by replying with **"done"**.')
+                    .setColor('Green')
+                    .setTimestamp()]
+            });
+        } catch (err) {
+            console.error('Failed to DM trainee after resolve:', err);
         }
     }
 };

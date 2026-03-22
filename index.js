@@ -78,22 +78,27 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// Handle claim_rep button
+// Handle buttons
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
-    if (interaction.customId !== 'claim_rep') return;
 
-    try {
-        const originalEmbed = interaction.message.embeds[0];
-        const { EmbedBuilder } = require('discord.js');
-        const updatedEmbed = EmbedBuilder.from(originalEmbed)
-            .setColor('Grey')
-            .setTitle('📥 Rep Request — Claimed')
-            .addFields({ name: 'Claimed By', value: `${interaction.user}`, inline: false });
+    if (interaction.customId === 'claim_rep') {
+        try {
+            const originalEmbed = interaction.message.embeds[0];
+            const { EmbedBuilder } = require('discord.js');
+            const updatedEmbed = EmbedBuilder.from(originalEmbed)
+                .setColor('Grey')
+                .setTitle('📥 Rep Request — Claimed')
+                .addFields({ name: 'Claimed By', value: `${interaction.user}`, inline: false });
+            await interaction.update({ embeds: [updatedEmbed], components: [] });
+        } catch (err) {
+            console.error('Error handling claim_rep button:', err);
+        }
+    }
 
-        await interaction.update({ embeds: [updatedEmbed], components: [] });
-    } catch (err) {
-        console.error('Error handling claim_rep button:', err);
+    if (interaction.customId.startsWith('resolve_help_')) {
+        const starttraining = client.commands.get('starttraining');
+        if (starttraining) await starttraining.handleResolve(interaction, client);
     }
 });
 
