@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { loadAlliances } = require('../utils/allianceStorage');
 
-const LOG_CHANNEL_ID = '1485119755206791289';
+const LOG_CHANNEL_ID = '1482430133561196625';
 const CHECKIN_LOG_CHANNEL_ID = '1482430133561196625';
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 
