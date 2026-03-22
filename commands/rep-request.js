@@ -25,22 +25,17 @@ module.exports = {
                 .setDescription('Alliance link')
                 .setRequired(true)),
 
-    async execute(interaction, client) {
+    async execute(interaction) {
         const number = interaction.options.getInteger('number');
         const discordLink = interaction.options.getString('discordlink');
         const robloxLink = interaction.options.getString('robloxlink');
         const allianceLink = interaction.options.getString('alliancelink');
 
-        const guild = interaction.guild;
-        if (!guild) return interaction.reply({ content: 'Guild not found.', ephemeral: true });
+        const repChannel = interaction.guild.channels.cache.find(ch => ch.name === 'rep-request');
+        if (!repChannel) return interaction.reply({ content: '❌ Rep request channel not found.', ephemeral: true });
 
-        const repChannel = guild.channels.cache.find(ch => ch.name === 'rep-request');
-        if (!repChannel) return interaction.reply({ content: 'Rep request channel not found.', ephemeral: true });
-
-        // [PR] | Staff Role ID
         const staffRoleId = '1417981534421520515';
 
-        // Build the embed
         const embed = new EmbedBuilder()
             .setTitle('📥 New Rep Request')
             .addFields(
@@ -54,7 +49,6 @@ module.exports = {
             .setColor('Green')
             .setTimestamp();
 
-        // Create "Claimed" button
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('claim_rep')
@@ -62,15 +56,13 @@ module.exports = {
                 .setStyle(ButtonStyle.Success)
         );
 
-        // Send message with embed + button and ping the role
         await repChannel.send({
             content: `<@&${staffRoleId}>`,
             embeds: [embed],
             components: [row],
-            allowedMentions: { roles: [staffRoleId] } // ensures the role gets pinged
+            allowedMentions: { roles: [staffRoleId] }
         });
 
-        // Reply to staff member using command
         await interaction.reply({ content: '✅ Rep request sent!', ephemeral: true });
     }
 };

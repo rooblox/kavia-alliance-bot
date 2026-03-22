@@ -1,11 +1,12 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
+const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 const sendingDMs = new Set();
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('dm')
-        .setDescription('Send a staff direct message to a user')
+        .setDescription('Send a direct message to a user as the bot')
         .addUserOption(option =>
             option.setName('member')
                 .setDescription('Select the user to DM')
@@ -18,55 +19,42 @@ module.exports = {
     async execute(interaction, client) {
         const user = interaction.options.getUser('member');
         const messageContent = interaction.options.getString('message');
-        const guildId = '1454555005725048894'; // Your production server ID
-        const logChannelId = '1451553296467755048'; // dm-logs channel ID
 
-        // Prevent multiple simultaneous DMs
         if (sendingDMs.has(user.id)) {
-            return interaction.reply({ content: `⚠️ DM already being sent to ${user.tag}`, ephemeral: true });
+            return interaction.reply({ content: `⚠️ A DM is already being sent to ${user.tag}.`, ephemeral: true });
         }
         sendingDMs.add(user.id);
 
-        const dmEmbed = new EmbedBuilder()
-            .setTitle('📩 Staff Direct Message')
-            .setDescription(messageContent)
-            .setColor('Gold')
-            .setTimestamp();
-
         try {
-            // Send DM to user
-            await user.send({ embeds: [dmEmbed] });
-
-            // Confirm to the staff member
-            if (!interaction.replied) {
-                await interaction.reply({ content: `✅ DM sent to ${user.tag}`, ephemeral: true });
-            }
-
-            // Fetch the log channel by ID (reliable in production)
-            const logChannel = await client.channels.fetch(logChannelId);
-            if (!logChannel) return console.error('Log channel not found');
-
-            const logEmbed = new EmbedBuilder()
-                .setTitle('📩 Staff DM Sent')
-                .addFields(
-                    { name: 'To', value: `${user.tag}`, inline: false },
-                    { name: 'Message', value: messageContent, inline: false },
-                    { name: 'Sent By', value: `${interaction.user.tag}`, inline: false },
-                    { name: 'Date', value: new Date().toLocaleString(), inline: false }
-                )
-                .setColor('Blue')
+            const dmEmbed = new EmbedBuilder()
+                .setTitle('📩 Staff Direct Message')
+                .setDescription(messageContent)
+                .setColor('Gold')
                 .setTimestamp();
 
-            await logChannel.send({ embeds: [logEmbed] });
+            await user.send({ embeds: [dmEmbed] });
+            await interaction.reply({ content: `✅ DM sent to ${user.tag}`, ephemeral: true });
 
+            if (LOG_CHANNEL_ID) {
+                const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+                if (logChannel) {
+                    const logEmbed = new EmbedBuilder()
+                        .setTitle('📩 Staff DM Sent')
+                        .addFields(
+                            { name: 'To', value: `${user.tag}`, inline: false },
+                            { name: 'Message', value: messageContent, inline: false },
+                            { name: 'Sent By', value: `${interaction.user.tag}`, inline: false },
+                            { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                        )
+                        .setColor('Blue')
+                        .setTimestamp();
+                    await logChannel.send({ embeds: [logEmbed] });
+                }
+            }
         } catch (err) {
-            console.error('Error sending DM or logging:', err);
-
+            console.error('Error sending DM:', err);
             if (!interaction.replied) {
-                await interaction.reply({
-                    content: `❌ Could not DM ${user.tag}. They may have DMs closed.`,
-                    ephemeral: true
-                });
+                await interaction.reply({ content: `❌ Could not DM ${user.tag}. They may have DMs closed.`, ephemeral: true });
             }
         } finally {
             sendingDMs.delete(user.id);
