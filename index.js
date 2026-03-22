@@ -116,26 +116,33 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.customId.startsWith('discipline_understood_')) {
-        const parts = interaction.customId.replace('discipline_understood_', '').split('_');
-        const userId = parts[0];
-        const groupName = parts.slice(1).join('_').replace(/_/g, ' ');
+        try {
+            const parts = interaction.customId.replace('discipline_understood_', '').split('_');
+            const userId = parts[0];
+            const groupName = parts.slice(1).join('_').replace(/_/g, ' ');
 
-        await interaction.update({ components: [] });
+            await interaction.update({ components: [] });
 
-        const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
-        if (logChannel) {
-            await logChannel.send({
-                embeds: [new EmbedBuilder()
-                    .setTitle('✅ Discipline Notice Acknowledged')
-                    .setColor('Green')
-                    .addFields(
-                        { name: 'User', value: `<@${userId}>`, inline: true },
-                        { name: 'Alliance', value: groupName, inline: true },
-                        { name: 'Acknowledged By', value: `${interaction.user.tag}`, inline: true },
-                        { name: 'Date', value: new Date().toLocaleString(), inline: false }
-                    )
-                    .setTimestamp()]
-            });
+            const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+            if (logChannel) {
+                await logChannel.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('✅ Discipline Notice Acknowledged')
+                        .setColor('Green')
+                        .addFields(
+                            { name: 'User', value: `<@${userId}>`, inline: true },
+                            { name: 'Alliance', value: groupName, inline: true },
+                            { name: 'Acknowledged By', value: `${interaction.user.tag}`, inline: true },
+                            { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                        )
+                        .setTimestamp()]
+                });
+            }
+        } catch (err) {
+            console.error('Error handling discipline_understood button:', err);
+            try {
+                await interaction.reply({ content: '✅ Acknowledged.', ephemeral: true });
+            } catch {}
         }
         return;
     }
