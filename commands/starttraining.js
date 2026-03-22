@@ -153,7 +153,6 @@ module.exports = {
             }
 
             await interaction.update({ components: [] });
-
             session.section++;
 
             if (session.section >= SECTIONS.length) {
@@ -164,7 +163,7 @@ module.exports = {
                 const quizIntroEmbed = new EmbedBuilder()
                     .setTitle('📝 Final Quiz')
                     .setDescription('Great job completing the training! You will now be asked **8 questions**.\n\nSelect your answer using the buttons below each question.')
-                    .setColor('Purple')
+                    .setColor(0x9B59B6)
                     .setTimestamp();
 
                 await interaction.user.send({ embeds: [quizIntroEmbed] });
@@ -265,14 +264,13 @@ module.exports = {
                     await interaction.user.send({ embeds: [buildQuestionEmbed(session.quizIndex)], components: [buildQuizRow(userId, session.quizIndex)] });
                 }, 1000);
             } else {
-                // Quiz complete — send results to log with pass/fail buttons
                 const score = session.quizAnswers.filter(a => a.passed).length;
                 const autoPass = score >= 6;
 
                 const completionEmbed = new EmbedBuilder()
                     .setTitle('📋 Quiz Submitted!')
                     .setDescription(`You have completed the quiz! A member of PR Leadership will review your results shortly.`)
-                    .setColor('Purple')
+                    .setColor(0x9B59B6)
                     .addFields({ name: 'Your Score', value: `${score}/8`, inline: true })
                     .setTimestamp();
 
@@ -363,7 +361,6 @@ module.exports = {
                     .setTimestamp();
                 await user.send({ embeds: [failEmbed] });
 
-                // Restart training from the top
                 setTimeout(async () => {
                     activeSessions.set(userId, {
                         section: 0,
@@ -422,10 +419,12 @@ module.exports = {
         if (message.guild) return;
         const session = activeSessions.get(message.author.id);
         if (!session) return;
-        // Sessions are now button-driven, just react to any DM
         await message.react('👀').catch(() => {});
     }
 };
+
+module.exports.activeSessions = activeSessions;
+module.exports.helpMessages = helpMessages;
 
 function buildSectionEmbed(index) {
     const section = SECTIONS[index];
