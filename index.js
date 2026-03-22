@@ -122,16 +122,22 @@ client.on('interactionCreate', async (interaction) => {
             const userId = parts[0];
             const groupName = parts[1];
             const actionLabel = parts[2];
-            const rank = parts[3]?.replace(/_/g, ' ') || 'PR Staff';
-            const reason = parts.slice(4).join(' ').replace(/_/g, ' ') || 'N/A';
+
+            // Only the specific rep whose button this is can click it
+            if (interaction.user.id !== userId) {
+                return interaction.reply({
+                    content: '❌ This button is not for you.',
+                    ephemeral: true
+                });
+            }
 
             await interaction.reply({
                 content: '✅ Thank you for acknowledging. You will now be removed from the server.',
                 ephemeral: true
             });
 
-            const pending = client._disciplinePending?.get(groupName.replace(/_/g, ' '));
-            if (pending) pending.pendingKicks.delete(userId);
+            const pendingData = client._disciplinePending?.get(groupName.replace(/_/g, ' '));
+            if (pendingData) pendingData.pendingKicks.delete(userId);
 
             const guild = await client.guilds.fetch(interaction.guildId).catch(() => null);
             if (!guild) return;
@@ -146,14 +152,14 @@ client.on('interactionCreate', async (interaction) => {
                         .setTitle(`${actionLabel.charAt(0).toUpperCase() + actionLabel.slice(1)} Notice`)
                         .setDescription(
                             `Greetings, <@${userId}>\n\n` +
-                            `I'm unfortunately saddened to inform you that your alliance with **Kavià Café** has been **${actionLabel}**, effective immediately.\n\n` +
+                            `I'm unfortunately saddened to inform you that your alliance with **Kavià Café** has been **${actionLabel}d**, effective immediately.\n\n` +
                             `This decision was made after careful consideration and was not made lightly.\n\n` +
-                            `🗒️ **Reason:** ${reason}\n\n` +
+                            `🗒️ **Reason:** ${pendingData?.reason || 'N/A'}\n\n` +
                             `We appreciate the time and effort you've contributed during your time as an alliance with **Kavià Café**.\n\n` +
                             `If you believe this decision was made in error, please feel free to DM me for clarification or open a ticket.\n\n` +
                             `**Regards,**\n` +
-                            `**${interaction.user.username}**\n` +
-                            `**${rank}**\n` +
+                            `**${pendingData?.staffName || interaction.user.username}**\n` +
+                            `**${pendingData?.rank || 'PR Staff'}**\n` +
                             `**Kavià || Public Relations Team**`
                         )
                         .setColor(actionLabel === 'blacklist' ? 0x000000 : 'Red')
@@ -167,8 +173,7 @@ client.on('interactionCreate', async (interaction) => {
             // Kick
             await member.kick(`Alliance ${actionLabel} acknowledged`).catch(console.error);
 
-            // Check if all reps acknowledged — delete roles and archive
-            const pendingData = client._disciplinePending?.get(groupName.replace(/_/g, ' '));
+            // If all reps acknowledged — delete roles and archive channel
             if (pendingData && pendingData.pendingKicks.size === 0) {
                 const g = await client.guilds.fetch(pendingData.guildId).catch(() => null);
                 if (g) {
