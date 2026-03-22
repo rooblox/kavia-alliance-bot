@@ -70,7 +70,7 @@ module.exports = {
 
             if (totalPages <= 1) return;
 
-            const collector = post.createMessageComponentCollector({ time: 300000 });
+            const collector = post.createMessageComponentCollector();
             collector.on('collect', async i => {
                 if (i.customId === 'next_post') page = Math.min(page + 1, totalPages - 1);
                 if (i.customId === 'prev_post') page = Math.max(page - 1, 0);
