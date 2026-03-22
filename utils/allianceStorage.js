@@ -1,4 +1,4 @@
-const { Alliance } = require('../db');
+const { Alliance, AllianceListMessage } = require('../db');
 
 async function loadAlliances() {
     return await Alliance.find({});
@@ -20,4 +20,16 @@ async function findAlliance(groupName) {
     return await Alliance.findOne({ groupName });
 }
 
-module.exports = { loadAlliances, saveAlliance, deleteAlliance, findAlliance };
+async function getListMessage() {
+    return await AllianceListMessage.findOne({});
+}
+
+async function setListMessage(messageId, channelId) {
+    return await AllianceListMessage.findOneAndUpdate(
+        {},
+        { messageId, channelId },
+        { upsert: true, new: true }
+    );
+}
+
+module.exports = { loadAlliances, saveAlliance, deleteAlliance, findAlliance, getListMessage, setListMessage };

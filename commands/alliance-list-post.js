@@ -1,7 +1,49 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { loadAlliances } = require('../utils/allianceStorage');
+const { loadAlliances, setListMessage } = require('../utils/allianceStorage');
 
 const ITEMS_PER_PAGE = 6;
+
+async function buildPages(alliances) {
+    const sections = ['Restaurants', 'Cafes', 'Others'];
+    const formatted = [];
+    sections.forEach(section => {
+        const list = alliances.filter(a => a.section === section);
+        if (list.length) {
+            formatted.push({ type: 'header', section });
+            list.forEach(a => formatted.push({ type: 'alliance', data: a }));
+        }
+    });
+    return formatted;
+}
+
+function buildEmbed(formatted, p) {
+    const totalPages = Math.ceil(formatted.length / ITEMS_PER_PAGE);
+    const embed = new EmbedBuilder()
+        .setTitle('📜 Current Alliances')
+        .setColor('Blue')
+        .setFooter({ text: `Page ${p + 1} / ${totalPages}` })
+        .setTimestamp();
+
+    const pageItems = formatted.slice(p * ITEMS_PER_PAGE, (p + 1) * ITEMS_PER_PAGE);
+    pageItems.forEach(item => {
+        if (item.type === 'header') {
+            embed.addFields({ name: `🗂️ **${item.section}**`, value: '──────────────', inline: false });
+        } else {
+            const a = item.data;
+            embed.addFields({
+                name: `✨ **${a.groupName}**`,
+                value:
+                    `**Our Reps:** ${a.ourReps}\n` +
+                    `**Their Reps:** ${a.theirReps}\n` +
+                    `**Discord:** ${a.discordLink}\n` +
+                    `**Roblox:** ${a.robloxLink}\n` +
+                    `**Rep Role:** ${a.repRoleId ? `<@&${a.repRoleId}>` : 'None'}`,
+                inline: false
+            });
+        }
+    });
+    return embed;
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -15,46 +57,9 @@ module.exports = {
             const alliances = await loadAlliances();
             if (!alliances.length) return await interaction.editReply('No alliances found.');
 
-            const sections = ['Restaurants', 'Cafes', 'Others'];
-            const formatted = [];
-            sections.forEach(section => {
-                const list = alliances.filter(a => a.section === section);
-                if (list.length) {
-                    formatted.push({ type: 'header', section });
-                    list.forEach(a => formatted.push({ type: 'alliance', data: a }));
-                }
-            });
-
-            let page = 0;
+            const formatted = await buildPages(alliances);
             const totalPages = Math.ceil(formatted.length / ITEMS_PER_PAGE);
-
-            const buildEmbed = (p) => {
-                const embed = new EmbedBuilder()
-                    .setTitle('📜 Current Alliances')
-                    .setColor('Blue')
-                    .setFooter({ text: `Page ${p + 1} / ${totalPages}` })
-                    .setTimestamp();
-
-                const pageItems = formatted.slice(p * ITEMS_PER_PAGE, (p + 1) * ITEMS_PER_PAGE);
-                pageItems.forEach(item => {
-                    if (item.type === 'header') {
-                        embed.addFields({ name: `🗂️ **${item.section}**`, value: '──────────────', inline: false });
-                    } else {
-                        const a = item.data;
-                        embed.addFields({
-                            name: `✨ **${a.groupName}**`,
-                            value:
-                                `**Our Reps:** ${a.ourReps}\n` +
-                                `**Their Reps:** ${a.theirReps}\n` +
-                                `**Discord:** ${a.discordLink}\n` +
-                                `**Roblox:** ${a.robloxLink}\n` +
-                                `**Rep Role:** ${a.repRoleId ? `<@&${a.repRoleId}>` : 'None'}`,
-                            inline: false
-                        });
-                    }
-                });
-                return embed;
-            };
+            let page = 0;
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('prev_post').setLabel('⬅️').setStyle(ButtonStyle.Secondary),
@@ -62,9 +67,12 @@ module.exports = {
             );
 
             const post = await interaction.channel.send({
-                embeds: [buildEmbed(page)],
+                embeds: [buildEmbed(formatted, page)],
                 components: totalPages > 1 ? [row] : []
             });
+
+            // Save message ID and channel ID to MongoDB
+            await setListMessage(post.id, interaction.channel.id);
 
             await interaction.editReply('✅ Alliance list posted.');
 
@@ -74,7 +82,7 @@ module.exports = {
             collector.on('collect', async i => {
                 if (i.customId === 'next_post') page = Math.min(page + 1, totalPages - 1);
                 if (i.customId === 'prev_post') page = Math.max(page - 1, 0);
-                await i.update({ embeds: [buildEmbed(page)], components: [row] });
+                await i.update({ embeds: [buildEmbed(formatted, page)], components: [row] });
             });
         } catch (err) {
             console.error('Error executing alliance-list-post:', err);
@@ -82,5 +90,8 @@ module.exports = {
                 await interaction.editReply('❌ There was an error executing this command.');
             }
         }
-    }
+    },
+
+    buildEmbed,
+    buildPages
 };

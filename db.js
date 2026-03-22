@@ -37,6 +37,12 @@ const allianceSchema = new mongoose.Schema({
     addedAt: { type: Date, default: Date.now }
 });
 
-const Alliance = mongoose.models.Alliance || mongoose.model('Alliance', allianceSchema);
+const allianceListMessageSchema = new mongoose.Schema({
+    messageId: { type: String, required: true },
+    channelId: { type: String, required: true }
+});
 
-module.exports = { connectDB, Alliance };
+const Alliance = mongoose.models.Alliance || mongoose.model('Alliance', allianceSchema);
+const AllianceListMessage = mongoose.models.AllianceListMessage || mongoose.model('AllianceListMessage', allianceListMessageSchema);
+
+module.exports = { connectDB, Alliance, AllianceListMessage };

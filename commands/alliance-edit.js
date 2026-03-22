@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, ChannelType } = require('discord.js');
 const { findAlliance, saveAlliance } = require('../utils/allianceStorage');
+const { refreshAllianceList } = require('../utils/refreshAllianceList');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -29,7 +30,7 @@ module.exports = {
                 .setDescription('Updated channel for welcome message')
                 .addChannelTypes(ChannelType.GuildText)),
 
-    async execute(interaction) {
+    async execute(interaction, client) {
         await interaction.deferReply({ ephemeral: true });
 
         try {
@@ -75,6 +76,7 @@ We're so excited to continue building a strong relationship.
                 await welcomeChannel.send({ content: welcomeMessage });
             }
 
+            await refreshAllianceList(client);
             await interaction.editReply(`✅ Alliance **${groupName}** successfully updated!`);
         } catch (err) {
             console.error('Error executing alliance-edit:', err);

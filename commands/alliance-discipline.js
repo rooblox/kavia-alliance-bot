@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ChannelType } = require('discord.js');
 const { findAlliance, saveAlliance, deleteAlliance } = require('../utils/allianceStorage');
+const { refreshAllianceList } = require('../utils/refreshAllianceList');
 
 const APPEAL_LINK = 'https://forms.gle/h3jUfsMkkzNSdcww8';
 
@@ -42,7 +43,7 @@ module.exports = {
             option.setName('follow_up')
                 .setDescription('Follow-up actions')),
 
-    async execute(interaction) {
+    async execute(interaction, client) {
         await interaction.deferReply({ ephemeral: true });
 
         try {
@@ -106,6 +107,7 @@ module.exports = {
 
             if (action === 'termination') {
                 await deleteAlliance(groupName);
+                await refreshAllianceList(client);
             }
 
             if (logChannel) {
