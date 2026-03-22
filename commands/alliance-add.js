@@ -17,14 +17,6 @@ module.exports = {
                 .setDescription('Name of the alliance group')
                 .setRequired(true))
         .addStringOption(option =>
-            option.setName('our_reps')
-                .setDescription('Your reps, mention them separated by space')
-                .setRequired(true))
-        .addStringOption(option =>
-            option.setName('their_reps')
-                .setDescription('Their reps, mention them separated by space')
-                .setRequired(true))
-        .addStringOption(option =>
             option.setName('section')
                 .setDescription('Section of the alliance')
                 .setRequired(true)
@@ -61,8 +53,6 @@ module.exports = {
 
         try {
             const groupName = interaction.options.getString('group_name');
-            const ourReps = interaction.options.getString('our_reps');
-            const theirReps = interaction.options.getString('their_reps');
             const section = interaction.options.getString('section');
             const discordLink = interaction.options.getString('discord_link') || 'N/A';
             const robloxLink = interaction.options.getString('roblox_link') || 'N/A';
@@ -81,6 +71,17 @@ module.exports = {
 
             await interaction.editReply('⏳ Setting up alliance... creating roles and channel.');
 
+            // Build rep strings automatically from user options
+            const theirRepsStr = [theirRep1, theirRep2]
+                .filter(Boolean)
+                .map(m => `<@${m.id}>`)
+                .join(' ') || 'N/A';
+
+            const ourRepsStr = [ourRep1, ourRep2]
+                .filter(Boolean)
+                .map(m => `<@${m.id}>`)
+                .join(' ') || 'N/A';
+
             // ── Create their rep role ──
             const theirRole = await guild.roles.create({
                 name: groupName,
@@ -93,22 +94,20 @@ module.exports = {
                 reason: `Our rep pair role for ${groupName}`
             });
 
-            // ── Assign their role to their reps ──
+            // ── Assign roles ──
             if (theirRep1) await theirRep1.roles.add(theirRole).catch(console.error);
             if (theirRep2) await theirRep2.roles.add(theirRole).catch(console.error);
-
-            // ── Assign our role to our reps ──
             if (ourRep1) await ourRep1.roles.add(ourRole).catch(console.error);
             if (ourRep2) await ourRep2.roles.add(ourRole).catch(console.error);
 
-            // ── Create channel under correct category ──
+            // ── Create channel ──
             const channel = await guild.channels.create({
                 name: groupName.toLowerCase().replace(/\s+/g, '-'),
                 type: ChannelType.GuildText,
                 parent: categoryId,
                 permissionOverwrites: [
                     {
-                        id: guild.id, // @everyone
+                        id: guild.id,
                         deny: [PermissionFlagsBits.ViewChannel]
                     },
                     {
@@ -128,7 +127,7 @@ module.exports = {
             });
 
             // ── Send welcome message ──
-            const repsArray = ourReps.split(' ');
+            const ourRepsArray = [ourRep1, ourRep2].filter(Boolean);
             const welcomeMessage = `:tada: **Welcome New Alliance! | Kavi Café x ${groupName}** :tada:
 
 We're thrilled to officially welcome your community into an alliance with Kavi Café! :star2:
@@ -139,8 +138,8 @@ If you have any questions, concerns, or suggestions, this is the perfect place t
 :busts_in_silhouette: **Your Representative Pair**
 Please meet your Kavi Café representatives:
 
-**• ${repsArray[0] || ''}**
-**• ${repsArray[1] || ''}**
+**• ${ourRepsArray[0] ? `<@${ourRepsArray[0].id}>` : 'TBD'}**
+**• ${ourRepsArray[1] ? `<@${ourRepsArray[1].id}>` : 'TBD'}**
 
 :handshake: **Looking Ahead**
 We're so excited to be working together and building a strong relationship.
@@ -154,8 +153,8 @@ We're so excited to be working together and building a strong relationship.
                 .setTitle(`New Alliance Added: ${groupName}`)
                 .setColor('Blue')
                 .addFields(
-                    { name: 'Our Reps', value: ourReps },
-                    { name: 'Their Reps', value: theirReps },
+                    { name: 'Their Reps', value: theirRepsStr },
+                    { name: 'Our Reps', value: ourRepsStr },
                     { name: 'Discord Link', value: discordLink },
                     { name: 'Roblox Link', value: robloxLink },
                     { name: 'Section', value: section },
@@ -171,8 +170,8 @@ We're so excited to be working together and building a strong relationship.
             // ── Save to MongoDB ──
             await saveAlliance({
                 groupName,
-                ourReps,
-                theirReps,
+                ourReps: ourRepsStr,
+                theirReps: theirRepsStr,
                 discordLink,
                 robloxLink,
                 repRoleId: theirRole.id,
@@ -185,7 +184,12 @@ We're so excited to be working together and building a strong relationship.
             });
 
             await refreshAllianceList(client);
-            await interaction.editReply(`✅ Alliance **${groupName}** successfully set up under **${section}**!\n\n• Channel: <#${channel.id}>\n• Their role: <@&${theirRole.id}>\n• Our rep role: <@&${ourRole.id}>`);
+            await interaction.editReply(
+                `✅ Alliance **${groupName}** successfully set up under **${section}**!\n\n` +
+                `• Channel: <#${channel.id}>\n` +
+                `• Their role: <@&${theirRole.id}>\n` +
+                `• Our rep role: <@&${ourRole.id}>`
+            );
 
         } catch (err) {
             console.error('Error executing alliance-add:', err);
