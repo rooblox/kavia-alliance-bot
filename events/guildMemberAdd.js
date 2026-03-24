@@ -1,6 +1,7 @@
 const { EmbedBuilder } = require('discord.js');
 
 const WELCOME_CHANNEL_ID = '1385081586873008231';
+const VERIFICATION_CHANNEL_ID = '1417865773271224350';
 
 module.exports = {
     name: 'guildMemberAdd',
@@ -14,7 +15,7 @@ module.exports = {
                 `Hey there, <@${member.id}>! We're so glad to have you here. 💜\n\n` +
                 `**Kavià Alliance Hub** is the home of our allied representatives and partnerships.\n\n` +
                 `**Here's what to do next:**\n` +
-                `• ✅ Head over to <#verification> and verify yourself\n` +
+                `• ✅ Head over to <#${VERIFICATION_CHANNEL_ID}> and verify yourself\n` +
                 `• 👥 Make sure you're an **Allied Representative** — if you're unsure, reach out to a member of PR Leadership\n` +
                 `• ⚠️ Please note that members who are not Allied Representatives may be removed\n\n` +
                 `If you have any questions, don't hesitate to reach out. We're happy to help!\n\n` +
