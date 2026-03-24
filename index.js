@@ -8,6 +8,8 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const LOG_CHANNEL_ID = '1462580398935642144';
 const DISCIPLINE_LOG_CHANNEL_ID = '1456389041770467370';
 const TERMINATED_CATEGORY_ID = '1428837884252786819';
+const WELCOME_CHANNEL_ID = '1385081586873008231';
+const VERIFICATION_CHANNEL_ID = '1417865773271224350';
 
 const client = new Client({
     intents: [
@@ -31,17 +33,6 @@ for (const file of commandFiles) {
     console.log(`Loaded command: ${command.data.name}`);
 }
 
-// Load events
-const eventFiles = fs.readdirSync('./events').filter(f => f.endsWith('.js'));
-for (const file of eventFiles) {
-    const event = require(`./events/${file}`);
-    if (event.once) {
-        client.once(event.name, (...args) => event.execute(...args, client));
-    } else {
-        client.on(event.name, (...args) => event.execute(...args, client));
-    }
-}
-
 async function deployToGuild(guildId) {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     const commandData = [...client.commands.values()].map(c => c.data.toJSON());
@@ -49,7 +40,7 @@ async function deployToGuild(guildId) {
         await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: commandData });
         console.log(`✅ Commands deployed to guild: ${guildId}`);
     } catch (err) {
-        console.error(`❌ Failed to deploy to guild ${guildId}:`, err);
+        console.error(`❌ Failed to deploy to guild ${guildId}:`, err.message);
     }
 }
 
@@ -64,6 +55,31 @@ client.once('ready', async () => {
 client.on('guildCreate', async (guild) => {
     console.log(`Joined new guild: ${guild.name}`);
     await deployToGuild(guild.id);
+});
+
+// Welcome message
+client.on('guildMemberAdd', async (member) => {
+    const channel = await client.channels.fetch(WELCOME_CHANNEL_ID).catch(() => null);
+    if (!channel) return;
+
+    const embed = new EmbedBuilder()
+        .setTitle('☕ Welcome to Kavià | Alliance Hub!')
+        .setDescription(
+            `Hey there, <@${member.id}>! We're so glad to have you here. 💜\n\n` +
+            `**Kavià Alliance Hub** is the home of our allied representatives and partnerships.\n\n` +
+            `**Here's what to do next:**\n` +
+            `• ✅ Head over to <#${VERIFICATION_CHANNEL_ID}> and verify yourself\n` +
+            `• 👥 Make sure you're an **Allied Representative** — if you're unsure, reach out to a member of PR Leadership\n` +
+            `• ⚠️ Please note that members who are not Allied Representatives may be removed\n\n` +
+            `If you have any questions, don't hesitate to reach out. We're happy to help!\n\n` +
+            `**— Kavià Café | PR Leadership** ☕`
+        )
+        .setColor(0x9B59B6)
+        .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+        .setFooter({ text: 'Kavià Café — Public Relations Department' })
+        .setTimestamp();
+
+    await channel.send({ content: `<@${member.id}>`, embeds: [embed] });
 });
 
 // Role restriction + command handler
@@ -150,7 +166,6 @@ client.on('interactionCreate', async (interaction) => {
 
             await interaction.reply({ content: '✅ Thank you for acknowledging the strike.', ephemeral: true });
 
-            // Update message buttons to show who acknowledged
             try {
                 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
                 const oldComponents = interaction.message.components[0]?.components || [];
@@ -216,7 +231,6 @@ client.on('interactionCreate', async (interaction) => {
                 ephemeral: true
             });
 
-            // Update message to show who acknowledged
             try {
                 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
                 const oldComponents = interaction.message.components[0]?.components || [];
@@ -246,7 +260,6 @@ client.on('interactionCreate', async (interaction) => {
             const member = await guild.members.fetch(userId).catch(() => null);
             if (!member) return;
 
-            // DM before kick
             try {
                 await member.send({
                     embeds: [new EmbedBuilder()
@@ -271,10 +284,8 @@ client.on('interactionCreate', async (interaction) => {
                 console.error(`Failed to DM ${userId}:`, err);
             }
 
-            // Kick
             await member.kick(`Alliance ${actionLabel} acknowledged`).catch(console.error);
 
-            // If all reps acknowledged — delete roles and archive channel
             if (pendingData && pendingData.pendingKicks.size === 0) {
                 const g = await client.guilds.fetch(pendingData.guildId).catch(() => null);
                 if (g) {
@@ -295,7 +306,6 @@ client.on('interactionCreate', async (interaction) => {
                 client._disciplineAcks.delete(groupName);
             }
 
-            // Log
             const disciplineLogChannel = await client.channels.fetch(DISCIPLINE_LOG_CHANNEL_ID).catch(() => null);
             if (disciplineLogChannel) {
                 await disciplineLogChannel.send({
