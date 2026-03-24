@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const { Client, Collection, GatewayIntentBits, REST, Routes, EmbedBuilder } = require('discord.js');
-const { connectDB } = require('./db');
+const { connectDB, DisciplinePending, StrikePending } = require('./db');
 
 const ALLOWED_ROLE_ID = '1485100238715883720';
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -47,6 +47,43 @@ async function deployToGuild(guildId) {
 client.once('ready', async () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
     await connectDB();
+
+    // Reload discipline pending from MongoDB
+    try {
+        const pendingDisciplines = await DisciplinePending.find({});
+        client._disciplinePending = client._disciplinePending || new Map();
+        for (const doc of pendingDisciplines) {
+            client._disciplinePending.set(doc.groupName, {
+                pendingKicks: new Set(doc.pendingKicks),
+                alliance: doc.allianceData,
+                actionLabel: doc.actionLabel,
+                actionColor: doc.actionColor,
+                reason: doc.reason,
+                rank: doc.rank,
+                staffName: doc.staffName,
+                guildId: doc.guildId,
+                isStrike: doc.isStrike
+            });
+        }
+        console.log(`✅ Reloaded ${pendingDisciplines.length} pending discipline(s) from MongoDB`);
+    } catch (err) {
+        console.error('❌ Failed to reload pending disciplines:', err);
+    }
+
+    // Reload strike pending from MongoDB
+    try {
+        const pendingStrikes = await StrikePending.find({});
+        client._strikePending = client._strikePending || new Map();
+        for (const doc of pendingStrikes) {
+            client._strikePending.set(doc.key, {
+                acknowledged: new Set(doc.acknowledged)
+            });
+        }
+        console.log(`✅ Reloaded ${pendingStrikes.length} pending strike(s) from MongoDB`);
+    } catch (err) {
+        console.error('❌ Failed to reload pending strikes:', err);
+    }
+
     for (const guild of client.guilds.cache.values()) {
         await deployToGuild(guild.id);
     }
@@ -164,6 +201,13 @@ client.on('interactionCreate', async (interaction) => {
             }
             client._strikePending.get(key).acknowledged.add(userId);
 
+            // Save to MongoDB
+            await StrikePending.findOneAndUpdate(
+                { key },
+                { key, acknowledged: [...client._strikePending.get(key).acknowledged] },
+                { upsert: true, new: true }
+            ).catch(console.error);
+
             await interaction.reply({ content: '✅ Thank you for acknowledging the strike.', ephemeral: true });
 
             try {
@@ -254,6 +298,15 @@ client.on('interactionCreate', async (interaction) => {
             const pendingData = client._disciplinePending?.get(groupName);
             if (pendingData) pendingData.pendingKicks.delete(userId);
 
+            // Update MongoDB
+            if (pendingData) {
+                await DisciplinePending.findOneAndUpdate(
+                    { groupName },
+                    { pendingKicks: [...pendingData.pendingKicks] },
+                    { new: true }
+                ).catch(console.error);
+            }
+
             const guild = await client.guilds.fetch(interaction.guildId).catch(() => null);
             if (!guild) return;
 
@@ -302,6 +355,8 @@ client.on('interactionCreate', async (interaction) => {
                         if (ch) await ch.setParent(TERMINATED_CATEGORY_ID, { lockPermissions: false }).catch(console.error);
                     }
                 }
+                // Delete from MongoDB
+                await DisciplinePending.findOneAndDelete({ groupName }).catch(console.error);
                 client._disciplinePending.delete(groupName);
                 client._disciplineAcks.delete(groupName);
             }

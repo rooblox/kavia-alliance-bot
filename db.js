@@ -45,7 +45,30 @@ const allianceListMessageSchema = new mongoose.Schema({
     channelId: { type: String, required: true }
 });
 
+const disciplinePendingSchema = new mongoose.Schema({
+    groupName: { type: String, required: true, unique: true },
+    pendingKicks: [{ type: String }],
+    acknowledgedKicks: [{ type: String }],
+    allianceData: { type: Object },
+    actionLabel: { type: String },
+    actionColor: { type: mongoose.Schema.Types.Mixed },
+    reason: { type: String },
+    rank: { type: String },
+    staffName: { type: String },
+    guildId: { type: String },
+    isStrike: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const strikePendingSchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true },
+    acknowledged: [{ type: String }],
+    createdAt: { type: Date, default: Date.now }
+});
+
 const Alliance = mongoose.models.Alliance || mongoose.model('Alliance', allianceSchema);
 const AllianceListMessage = mongoose.models.AllianceListMessage || mongoose.model('AllianceListMessage', allianceListMessageSchema);
+const DisciplinePending = mongoose.models.DisciplinePending || mongoose.model('DisciplinePending', disciplinePendingSchema);
+const StrikePending = mongoose.models.StrikePending || mongoose.model('StrikePending', strikePendingSchema);
 
-module.exports = { connectDB, Alliance, AllianceListMessage };
+module.exports = { connectDB, Alliance, AllianceListMessage, DisciplinePending, StrikePending };

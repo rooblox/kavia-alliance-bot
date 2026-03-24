@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { findAlliance, saveAlliance, deleteAlliance } = require('../utils/allianceStorage');
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
+const { DisciplinePending } = require('../db');
 
 const APPEAL_LINK = 'https://forms.gle/h3jUfsMkkzNSdcww8';
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
@@ -89,12 +90,10 @@ module.exports = {
 
                 await saveAlliance(alliance);
 
-                // Check remaining active strikes after removal
                 const activeStrikes = alliance.strikes.filter(s => !s.removed);
                 const hasStrike1 = activeStrikes.some(s => s.number === 1);
                 const hasStrike2 = activeStrikes.some(s => s.number === 2);
 
-                // Remove strike roles from their reps
                 const theirRepIds = alliance.theirRepIds || [];
                 for (const repId of theirRepIds) {
                     const member = await interaction.guild.members.fetch(repId).catch(() => null);
@@ -136,7 +135,6 @@ module.exports = {
 
                 const strikeRoleId = action === 'strike1' ? STRIKE_1_ROLE_ID : STRIKE_2_ROLE_ID;
 
-                // Add strike role to their reps only
                 const theirRepIds = alliance.theirRepIds || [];
                 for (const repId of theirRepIds) {
                     const member = await interaction.guild.members.fetch(repId).catch(() => null);
@@ -204,6 +202,25 @@ module.exports = {
                     staffName: interaction.user.username,
                     guildId: interaction.guild.id
                 });
+
+                // Save to MongoDB so it survives restarts
+                await DisciplinePending.findOneAndUpdate(
+                    { groupName },
+                    {
+                        groupName,
+                        pendingKicks: [...pendingKicks],
+                        acknowledgedKicks: [],
+                        allianceData: alliance.toObject ? alliance.toObject() : alliance,
+                        actionLabel,
+                        actionColor,
+                        reason,
+                        rank,
+                        staffName: interaction.user.username,
+                        guildId: interaction.guild.id,
+                        isStrike: false
+                    },
+                    { upsert: true, new: true }
+                ).catch(console.error);
 
                 if (publicChannel) {
                     const buttons = repNames.map(rep =>
@@ -309,6 +326,8 @@ module.exports = {
                             if (ch) await ch.setParent(TERMINATED_CATEGORY_ID, { lockPermissions: false }).catch(console.error);
                         }
 
+                        // Delete from MongoDB
+                        await DisciplinePending.findOneAndDelete({ groupName }).catch(console.error);
                         client._disciplinePending.delete(groupName);
 
                     }, 24 * 60 * 60 * 1000);
