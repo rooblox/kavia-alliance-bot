@@ -22,12 +22,24 @@ const client = new Client({
 
 client.commands = new Collection();
 
+// Load commands
 const commandFiles = fs.readdirSync('./commands').filter(f => f.endsWith('.js'));
 for (const file of commandFiles) {
     const command = require(`./commands/${file}`);
     if (!command.data || !command.execute) continue;
     client.commands.set(command.data.name, command);
     console.log(`Loaded command: ${command.data.name}`);
+}
+
+// Load events
+const eventFiles = fs.readdirSync('./events').filter(f => f.endsWith('.js'));
+for (const file of eventFiles) {
+    const event = require(`./events/${file}`);
+    if (event.once) {
+        client.once(event.name, (...args) => event.execute(...args, client));
+    } else {
+        client.on(event.name, (...args) => event.execute(...args, client));
+    }
 }
 
 async function deployToGuild(guildId) {
@@ -129,7 +141,6 @@ client.on('interactionCreate', async (interaction) => {
                 return interaction.reply({ content: '❌ This button is not for you.', ephemeral: true });
             }
 
-            // Track acknowledgement in pending map
             client._strikePending = client._strikePending || new Map();
             const key = `${groupName}_${actionLabel}`;
             if (!client._strikePending.has(key)) {
@@ -139,7 +150,7 @@ client.on('interactionCreate', async (interaction) => {
 
             await interaction.reply({ content: '✅ Thank you for acknowledging the strike.', ephemeral: true });
 
-            // Update the message buttons to show who acknowledged
+            // Update message buttons to show who acknowledged
             try {
                 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
                 const oldComponents = interaction.message.components[0]?.components || [];
@@ -160,7 +171,6 @@ client.on('interactionCreate', async (interaction) => {
                 console.error('Failed to update strike message:', err);
             }
 
-            // Log
             const disciplineLogChannel = await client.channels.fetch(DISCIPLINE_LOG_CHANNEL_ID).catch(() => null);
             if (disciplineLogChannel) {
                 await disciplineLogChannel.send({
@@ -195,7 +205,6 @@ client.on('interactionCreate', async (interaction) => {
                 return interaction.reply({ content: '❌ This button is not for you.', ephemeral: true });
             }
 
-            // Track acknowledgement
             client._disciplineAcks = client._disciplineAcks || new Map();
             if (!client._disciplineAcks.has(groupName)) {
                 client._disciplineAcks.set(groupName, new Set());
@@ -207,7 +216,7 @@ client.on('interactionCreate', async (interaction) => {
                 ephemeral: true
             });
 
-            // Update the message to show who acknowledged
+            // Update message to show who acknowledged
             try {
                 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
                 const oldComponents = interaction.message.components[0]?.components || [];
