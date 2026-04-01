@@ -22,6 +22,10 @@ module.exports = {
         .addUserOption(option =>
             option.setName('our_rep_2')
                 .setDescription('Update our second rep'))
+        .addChannelOption(option =>
+            option.setName('welcome_channel')
+                .setDescription('Set or update the alliance channel')
+                .addChannelTypes(ChannelType.GuildText))
         .addStringOption(option =>
             option.setName('discord_link')
                 .setDescription('Updated Discord link'))
@@ -41,6 +45,7 @@ module.exports = {
             const theirRep2 = interaction.options.getMember('their_rep_2');
             const ourRep1 = interaction.options.getMember('our_rep_1');
             const ourRep2 = interaction.options.getMember('our_rep_2');
+            const welcomeChannel = interaction.options.getChannel('welcome_channel');
             const discordLink = interaction.options.getString('discord_link');
             const robloxLink = interaction.options.getString('roblox_link');
             const newGroupName = interaction.options.getString('group_name_new');
@@ -50,9 +55,13 @@ module.exports = {
 
             const guild = interaction.guild;
 
+            // ── Update welcome channel ──
+            if (welcomeChannel) {
+                alliance.welcomeChannelId = welcomeChannel.id;
+            }
+
             // ── Update their reps ──
             if (theirRep1 || theirRep2) {
-                // Remove role from old their reps
                 const oldTheirRepIds = alliance.theirRepIds || [];
                 for (const repId of oldTheirRepIds) {
                     const member = await guild.members.fetch(repId).catch(() => null);
@@ -61,7 +70,6 @@ module.exports = {
                     }
                 }
 
-                // Assign role to new their reps
                 const newTheirRepIds = [];
                 if (theirRep1) {
                     if (alliance.repRoleId) await theirRep1.roles.add(alliance.repRoleId).catch(console.error);
@@ -78,7 +86,6 @@ module.exports = {
 
             // ── Update our reps ──
             if (ourRep1 || ourRep2) {
-                // Remove role from old our reps
                 const oldOurRepIds = alliance.ourRepIds || [];
                 for (const repId of oldOurRepIds) {
                     const member = await guild.members.fetch(repId).catch(() => null);
@@ -87,7 +94,6 @@ module.exports = {
                     }
                 }
 
-                // Assign role to new our reps
                 const newOurRepIds = [];
                 if (ourRep1) {
                     if (alliance.ourRepRoleId) await ourRep1.roles.add(alliance.ourRepRoleId).catch(console.error);
@@ -108,26 +114,22 @@ module.exports = {
 
             // ── Rename alliance if requested ──
             if (newGroupName) {
-                // Rename their role
                 if (alliance.repRoleId) {
                     const theirRole = guild.roles.cache.get(alliance.repRoleId);
                     if (theirRole) await theirRole.setName(newGroupName).catch(console.error);
                 }
-                // Rename our role
                 if (alliance.ourRepRoleId) {
                     const ourRole = guild.roles.cache.get(alliance.ourRepRoleId);
                     if (ourRole) await ourRole.setName(`Rep Pair | ${newGroupName}`).catch(console.error);
                 }
-                // Rename channel
                 if (alliance.welcomeChannelId) {
-                    const channel = await client.channels.fetch(alliance.welcomeChannelId).catch(() => null);
-                    if (channel) await channel.setName(newGroupName.toLowerCase().replace(/\s+/g, '-')).catch(console.error);
+                    const ch = await client.channels.fetch(alliance.welcomeChannelId).catch(() => null);
+                    if (ch) await ch.setName(newGroupName.toLowerCase().replace(/\s+/g, '-')).catch(console.error);
                 }
-
                 alliance.groupName = newGroupName;
             }
 
-            // ── Send updated welcome message if reps changed ──
+            // ── Send updated welcome message if reps or channel changed ──
             if ((ourRep1 || ourRep2) && alliance.welcomeChannelId) {
                 const channel = await client.channels.fetch(alliance.welcomeChannelId).catch(() => null);
                 if (channel) {
