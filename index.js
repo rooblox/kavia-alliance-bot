@@ -109,17 +109,61 @@ client.once('ready', async () => {
                     const weekStart = qotdCmd.getWeekStart();
                     const existing = await QotdSchedule.findOne({ weekStart });
                     if (!existing) {
-                        const newSchedule = await QotdSchedule.create({ weekStart, days: {}, messageId: null });
-                        const channel = await client.channels.fetch(qotdCmd.SCHEDULE_CHANNEL_ID).catch(() => null);
-                        if (channel) {
-                            const msg = await channel.send({
-                                embeds: [qotdCmd.buildEmbed(newSchedule)],
-                                components: qotdCmd.buildButtons(newSchedule)
+                        const reminderChannel = await client.channels.fetch(qotdCmd.REMINDER_CHANNEL_ID).catch(() => null);
+                        const logChannel = await client.channels.fetch(qotdCmd.LOG_CHANNEL_ID).catch(() => null);
+
+                        const lastSchedule = await QotdSchedule.findOne({}).sort({ createdAt: -1 });
+                        if (lastSchedule && reminderChannel) {
+                            const posted = qotdCmd.DAYS.filter(d => lastSchedule.days[d]?.completed);
+                            const notPosted = qotdCmd.DAYS.filter(d => lastSchedule.days[d]?.userId && !lastSchedule.days[d]?.completed);
+                            const unclaimed = qotdCmd.DAYS.filter(d => !lastSchedule.days[d]?.userId);
+
+                            const postedLines = posted.length > 0
+                                ? posted.map(d => `✅ **${d}** — <@${lastSchedule.days[d].userId}>`).join('\n')
+                                : 'None';
+                            const notPostedLines = notPosted.length > 0
+                                ? notPosted.map(d => `❌ **${d}** — <@${lastSchedule.days[d].userId}>`).join('\n')
+                                : 'None';
+                            const unclaimedLines = unclaimed.length > 0
+                                ? unclaimed.map(d => `⚪ **${d}**`).join('\n')
+                                : 'None';
+
+                            await reminderChannel.send({
+                                content: `<@&${qotdCmd.QOTD_ROLE_ID}>`,
+                                embeds: [new EmbedBuilder()
+                                    .setTitle('📊 Weekly QOTD Summary')
+                                    .setDescription(
+                                        `The week has come to an end! Here's how we did this week. 💜\n\n` +
+                                        `**✅ Posted:**\n${postedLines}\n\n` +
+                                        `**❌ Claimed but not posted:**\n${notPostedLines}\n\n` +
+                                        `**⚪ Unclaimed:**\n${unclaimedLines}\n\n` +
+                                        `${posted.length > 0 ? `Amazing work to everyone who posted this week — you're all stars! 🌟\n\n` : ''}` +
+                                        `The schedule will reset shortly. A staff member will post the new schedule soon — make sure to claim your days! 📅`
+                                    )
+                                    .setColor(0x9B59B6)
+                                    .setFooter({ text: 'Kavià Café — QOTD System' })
+                                    .setTimestamp()],
+                                allowedMentions: { roles: [qotdCmd.QOTD_ROLE_ID] }
                             });
-                            newSchedule.messageId = msg.id;
-                            await newSchedule.save();
-                            console.log('✅ QOTD schedule reset for new week');
+
+                            if (logChannel) {
+                                await logChannel.send({
+                                    embeds: [new EmbedBuilder()
+                                        .setTitle('🔄 QOTD Weekly Auto-Reset')
+                                        .setColor('Purple')
+                                        .addFields(
+                                            { name: 'Posted', value: postedLines, inline: false },
+                                            { name: 'Not Posted', value: notPostedLines, inline: false },
+                                            { name: 'Unclaimed', value: unclaimedLines, inline: false },
+                                            { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                                        )
+                                        .setTimestamp()]
+                                });
+                            }
                         }
+
+                        const newSchedule = await QotdSchedule.create({ weekStart, days: {}, messageId: null });
+                        console.log('✅ QOTD schedule reset for new week');
                     }
                 } catch (err) {
                     console.error('Failed to reset QOTD:', err);
@@ -343,7 +387,6 @@ client.on('interactionCreate', async (interaction) => {
 
             await interaction.reply({ content: '✅ Thank you for acknowledging the strike.', ephemeral: true });
 
-            // Add strike role
             try {
                 const guild = await client.guilds.fetch(interaction.guildId).catch(() => null);
                 if (guild) {

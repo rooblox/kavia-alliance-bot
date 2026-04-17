@@ -3,7 +3,9 @@ const { QotdSchedule } = require('../db');
 
 const SCHEDULE_CHANNEL_ID = '1457224221024587909';
 const REMINDER_CHANNEL_ID = '1494499243136647208';
+const LOG_CHANNEL_ID = '1494502239119736922';
 const GUILD_ID = '1313780438061420584';
+const QOTD_ROLE_ID = '1419644380444098694';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -106,17 +108,53 @@ module.exports = {
                     const existing = await channel.messages.fetch(schedule.messageId);
                     await existing.edit({ embeds: [embed], components: buttons });
                     await interaction.editReply('✅ QOTD schedule refreshed!');
+
+                    // Log refresh
+                    const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+                    if (logChannel) {
+                        await logChannel.send({
+                            embeds: [new EmbedBuilder()
+                                .setTitle('🔄 QOTD Schedule Refreshed')
+                                .setColor('Blue')
+                                .addFields(
+                                    { name: 'Refreshed By', value: interaction.user.tag, inline: true },
+                                    { name: 'Date', value: new Date().toLocaleString(), inline: true }
+                                )
+                                .setTimestamp()]
+                        });
+                    }
                     return;
                 } catch {
                     // Message deleted, post new one
                 }
             }
 
-            const msg = await channel.send({ embeds: [embed], components: buttons });
+            const msg = await channel.send({
+                content: `<@&${QOTD_ROLE_ID}>`,
+                embeds: [embed],
+                components: buttons,
+                allowedMentions: { roles: [QOTD_ROLE_ID] }
+            });
             schedule.messageId = msg.id;
             await schedule.save();
 
             await interaction.editReply('✅ QOTD schedule posted!');
+
+            // Log post
+            const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+            if (logChannel) {
+                await logChannel.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('📅 QOTD Schedule Posted')
+                        .setColor('Green')
+                        .addFields(
+                            { name: 'Posted By', value: interaction.user.tag, inline: true },
+                            { name: 'Channel', value: `<#${SCHEDULE_CHANNEL_ID}>`, inline: true },
+                            { name: 'Date', value: new Date().toLocaleString(), inline: true }
+                        )
+                        .setTimestamp()]
+                });
+            }
         } catch (err) {
             console.error('Error executing qotd:', err);
             await interaction.editReply('❌ There was an error.');
@@ -125,6 +163,8 @@ module.exports = {
 
     async handleButton(interaction, client) {
         if (!interaction.customId.startsWith('qotd_claim_') && !interaction.customId.startsWith('qotd_posted_')) return;
+
+        const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
 
         // ── Claim/Unclaim button ──
         if (interaction.customId.startsWith('qotd_claim_')) {
@@ -138,6 +178,7 @@ module.exports = {
 
             // Unclaim if already claimed by this user
             if (entry?.userId === interaction.user.id) {
+                const displayName = entry.displayName;
                 schedule.days[day] = {};
                 schedule.markModified('days');
                 await schedule.save();
@@ -145,6 +186,21 @@ module.exports = {
                 const embed = buildEmbed(schedule);
                 const buttons = buildButtons(schedule);
                 await interaction.update({ embeds: [embed], components: buttons });
+
+                // Log unclaim
+                if (logChannel) {
+                    await logChannel.send({
+                        embeds: [new EmbedBuilder()
+                            .setTitle('🔓 QOTD Day Unclaimed')
+                            .setColor('Orange')
+                            .addFields(
+                                { name: 'User', value: `<@${interaction.user.id}>`, inline: true },
+                                { name: 'Day', value: day, inline: true },
+                                { name: 'Date', value: new Date().toLocaleString(), inline: true }
+                            )
+                            .setTimestamp()]
+                    });
+                }
                 return;
             }
 
@@ -168,6 +224,21 @@ module.exports = {
             const embed = buildEmbed(schedule);
             const buttons = buildButtons(schedule);
             await interaction.update({ embeds: [embed], components: buttons });
+
+            // Log claim
+            if (logChannel) {
+                await logChannel.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('🎯 QOTD Day Claimed')
+                        .setColor('Green')
+                        .addFields(
+                            { name: 'User', value: `<@${interaction.user.id}>`, inline: true },
+                            { name: 'Day', value: day, inline: true },
+                            { name: 'Date', value: new Date().toLocaleString(), inline: true }
+                        )
+                        .setTimestamp()]
+                });
+            }
         }
 
         // ── Posted button ──
@@ -196,14 +267,30 @@ module.exports = {
                 if (channel && schedule.messageId) {
                     const msg = await channel.messages.fetch(schedule.messageId).catch(() => null);
                     if (msg) {
-                        const updatedEmbed = buildEmbed(schedule);
-                        const updatedButtons = buildButtons(schedule);
-                        await msg.edit({ embeds: [updatedEmbed], components: updatedButtons }).catch(console.error);
+                        await msg.edit({
+                            embeds: [buildEmbed(schedule)],
+                            components: buildButtons(schedule)
+                        }).catch(console.error);
                     }
                 }
             }
 
             await interaction.followUp({ content: `✅ Marked **${day}** as posted! Great work! 🌟`, ephemeral: true });
+
+            // Log posted
+            if (logChannel) {
+                await logChannel.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('✅ QOTD Marked as Posted')
+                        .setColor('Green')
+                        .addFields(
+                            { name: 'User', value: `<@${interaction.user.id}>`, inline: true },
+                            { name: 'Day', value: day, inline: true },
+                            { name: 'Date', value: new Date().toLocaleString(), inline: true }
+                        )
+                        .setTimestamp()]
+                });
+            }
         }
     },
 
@@ -213,5 +300,7 @@ module.exports = {
     DAYS,
     SCHEDULE_CHANNEL_ID,
     REMINDER_CHANNEL_ID,
-    GUILD_ID
+    LOG_CHANNEL_ID,
+    GUILD_ID,
+    QOTD_ROLE_ID
 };
