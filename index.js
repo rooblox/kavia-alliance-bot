@@ -24,7 +24,6 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// Load commands
 const commandFiles = fs.readdirSync('./commands').filter(f => f.endsWith('.js'));
 for (const file of commandFiles) {
     const command = require(`./commands/${file}`);
@@ -48,7 +47,6 @@ client.once('ready', async () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
     await connectDB();
 
-    // Reload discipline pending from MongoDB
     try {
         const pendingDisciplines = await DisciplinePending.find({});
         client._disciplinePending = client._disciplinePending || new Map();
@@ -70,7 +68,6 @@ client.once('ready', async () => {
         console.error('❌ Failed to reload pending disciplines:', err);
     }
 
-    // Reload strike pending from MongoDB
     try {
         const pendingStrikes = await StrikePending.find({});
         client._strikePending = client._strikePending || new Map();
@@ -94,12 +91,13 @@ client.once('ready', async () => {
     setInterval(async () => {
         try {
             const now = new Date();
-            const estOffset = -5 * 60;
-            const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
-            const estMinutes = (utcMinutes + estOffset + 1440) % 1440;
-            const estHour = Math.floor(estMinutes / 60);
-            const estMin = estMinutes % 60;
-            const estDay = now.getUTCDay();
+
+            // Use America/New_York to handle EST/EDT automatically
+            const estString = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
+            const estDate = new Date(estString);
+            const estHour = estDate.getHours();
+            const estMin = estDate.getMinutes();
+            const estDay = estDate.getDay();
             const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
             const todayName = dayNames[estDay];
 
@@ -162,7 +160,7 @@ client.once('ready', async () => {
                             }
                         }
 
-                        const newSchedule = await QotdSchedule.create({ weekStart, days: {}, messageId: null });
+                        await QotdSchedule.create({ weekStart, days: {}, messageId: null });
                         console.log('✅ QOTD schedule reset for new week');
                     }
                 } catch (err) {
