@@ -66,9 +66,17 @@ const strikePendingSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 
+const qotdScheduleSchema = new mongoose.Schema({
+    weekStart: { type: String, required: true, unique: true },
+    messageId: { type: String, default: null },
+    days: { type: Object, default: {} },
+    createdAt: { type: Date, default: Date.now }
+});
+
 const Alliance = mongoose.models.Alliance || mongoose.model('Alliance', allianceSchema);
 const AllianceListMessage = mongoose.models.AllianceListMessage || mongoose.model('AllianceListMessage', allianceListMessageSchema);
 const DisciplinePending = mongoose.models.DisciplinePending || mongoose.model('DisciplinePending', disciplinePendingSchema);
 const StrikePending = mongoose.models.StrikePending || mongoose.model('StrikePending', strikePendingSchema);
+const QotdSchedule = mongoose.models.QotdSchedule || mongoose.model('QotdSchedule', qotdScheduleSchema);
 
-module.exports = { connectDB, Alliance, AllianceListMessage, DisciplinePending, StrikePending };
+module.exports = { connectDB, Alliance, AllianceListMessage, DisciplinePending, StrikePending, QotdSchedule };

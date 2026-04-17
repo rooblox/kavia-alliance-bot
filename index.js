@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
-const { Client, Collection, GatewayIntentBits, REST, Routes, EmbedBuilder } = require('discord.js');
-const { connectDB, DisciplinePending, StrikePending } = require('./db');
+const { Client, Collection, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { connectDB, DisciplinePending, StrikePending, QotdSchedule } = require('./db');
 
 const ALLOWED_ROLE_ID = '1485100238715883720';
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -87,6 +87,133 @@ client.once('ready', async () => {
     for (const guild of client.guilds.cache.values()) {
         await deployToGuild(guild.id);
     }
+
+    // ── QOTD Scheduler ──
+    const qotdCmd = client.commands.get('qotd');
+
+    setInterval(async () => {
+        try {
+            const now = new Date();
+            const estOffset = -5 * 60;
+            const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+            const estMinutes = (utcMinutes + estOffset + 1440) % 1440;
+            const estHour = Math.floor(estMinutes / 60);
+            const estMin = estMinutes % 60;
+            const estDay = now.getUTCDay();
+            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const todayName = dayNames[estDay];
+
+            // Sunday 11PM EST reset
+            if (estDay === 0 && estHour === 23 && estMin === 0) {
+                try {
+                    const weekStart = qotdCmd.getWeekStart();
+                    const existing = await QotdSchedule.findOne({ weekStart });
+                    if (!existing) {
+                        const newSchedule = await QotdSchedule.create({ weekStart, days: {}, messageId: null });
+                        const channel = await client.channels.fetch(qotdCmd.SCHEDULE_CHANNEL_ID).catch(() => null);
+                        if (channel) {
+                            const msg = await channel.send({
+                                embeds: [qotdCmd.buildEmbed(newSchedule)],
+                                components: qotdCmd.buildButtons(newSchedule)
+                            });
+                            newSchedule.messageId = msg.id;
+                            await newSchedule.save();
+                            console.log('✅ QOTD schedule reset for new week');
+                        }
+                    }
+                } catch (err) {
+                    console.error('Failed to reset QOTD:', err);
+                }
+            }
+
+            // 9AM EST daily reminder
+            if (estHour === 9 && estMin === 0) {
+                try {
+                    const weekStart = qotdCmd.getWeekStart();
+                    const schedule = await QotdSchedule.findOne({ weekStart });
+                    if (!schedule) return;
+
+                    const entry = schedule.days[todayName];
+                    if (!entry?.userId) return;
+
+                    const reminderChannel = await client.channels.fetch(qotdCmd.REMINDER_CHANNEL_ID).catch(() => null);
+                    if (!reminderChannel) return;
+
+                    const row = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`qotd_posted_${todayName}`)
+                            .setLabel('✅ I\'ve Posted My QOTD!')
+                            .setStyle(ButtonStyle.Success)
+                    );
+
+                    await reminderChannel.send({
+                        content: `<@${entry.userId}>`,
+                        embeds: [new EmbedBuilder()
+                            .setTitle('📅 QOTD Reminder!')
+                            .setDescription(
+                                `Hey <@${entry.userId}>! 👋\n\n` +
+                                `You have claimed **${todayName}** for QOTD this week!\n\n` +
+                                `Please make sure to post your Question of the Day today. Once you've posted it, click the button below to mark it as complete! ✨\n\n` +
+                                `Remember — completing your QOTD is **required** at least once a week! 💜`
+                            )
+                            .setColor(0x9B59B6)
+                            .setFooter({ text: 'Kavià Café — QOTD System' })
+                            .setTimestamp()],
+                        components: [row]
+                    });
+
+                    schedule.days[todayName].reminderSent = true;
+                    schedule.markModified('days');
+                    await schedule.save();
+
+                } catch (err) {
+                    console.error('Failed to send QOTD reminder:', err);
+                }
+            }
+
+            // 9PM EST follow-up reminder
+            if (estHour === 21 && estMin === 0) {
+                try {
+                    const weekStart = qotdCmd.getWeekStart();
+                    const schedule = await QotdSchedule.findOne({ weekStart });
+                    if (!schedule) return;
+
+                    const entry = schedule.days[todayName];
+                    if (!entry?.userId || entry.completed) return;
+
+                    const reminderChannel = await client.channels.fetch(qotdCmd.REMINDER_CHANNEL_ID).catch(() => null);
+                    if (!reminderChannel) return;
+
+                    const row = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`qotd_posted_${todayName}`)
+                            .setLabel('✅ I\'ve Posted My QOTD!')
+                            .setStyle(ButtonStyle.Success)
+                    );
+
+                    await reminderChannel.send({
+                        content: `<@${entry.userId}>`,
+                        embeds: [new EmbedBuilder()
+                            .setTitle('⏰ QOTD Follow-Up Reminder!')
+                            .setDescription(
+                                `Hey <@${entry.userId}>! 👋\n\n` +
+                                `Just a follow-up — we haven't seen your **${todayName}** QOTD posted yet!\n\n` +
+                                `Please make sure to get it posted before the day ends. Click the button below once you have! 💜`
+                            )
+                            .setColor('Orange')
+                            .setFooter({ text: 'Kavià Café — QOTD System' })
+                            .setTimestamp()],
+                        components: [row]
+                    });
+                } catch (err) {
+                    console.error('Failed to send QOTD follow-up reminder:', err);
+                }
+            }
+
+        } catch (err) {
+            console.error('QOTD scheduler error:', err);
+        }
+    }, 60 * 1000);
 });
 
 client.on('guildCreate', async (guild) => {
@@ -96,6 +223,7 @@ client.on('guildCreate', async (guild) => {
 
 // Welcome message
 client.on('guildMemberAdd', async (member) => {
+    if (member.guild.id !== '1385081586285940796') return;
     const channel = await client.channels.fetch(WELCOME_CHANNEL_ID).catch(() => null);
     if (!channel) return;
 
@@ -182,6 +310,12 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    if (interaction.customId.startsWith('qotd_')) {
+        const qotd = client.commands.get('qotd');
+        if (qotd) await qotd.handleButton(interaction, client);
+        return;
+    }
+
     // ── Strike acknowledgement ──
     if (interaction.customId.startsWith('strike_understood_')) {
         try {
@@ -201,7 +335,6 @@ client.on('interactionCreate', async (interaction) => {
             }
             client._strikePending.get(key).acknowledged.add(userId);
 
-            // Save to MongoDB
             await StrikePending.findOneAndUpdate(
                 { key },
                 { key, acknowledged: [...client._strikePending.get(key).acknowledged] },
@@ -210,8 +343,23 @@ client.on('interactionCreate', async (interaction) => {
 
             await interaction.reply({ content: '✅ Thank you for acknowledging the strike.', ephemeral: true });
 
+            // Add strike role
             try {
-                const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+                const guild = await client.guilds.fetch(interaction.guildId).catch(() => null);
+                if (guild) {
+                    const member = await guild.members.fetch(userId).catch(() => null);
+                    if (member) {
+                        const STRIKE_1_ROLE_ID = '1433165486258127062';
+                        const STRIKE_2_ROLE_ID = '1433165562531545141';
+                        const roleId = actionLabel === 'strike1' ? STRIKE_1_ROLE_ID : STRIKE_2_ROLE_ID;
+                        await member.roles.add(roleId).catch(console.error);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to add strike role on acknowledgement:', err);
+            }
+
+            try {
                 const oldComponents = interaction.message.components[0]?.components || [];
                 const newButtons = oldComponents.map(btn => {
                     const btnUserId = btn.customId.replace('strike_understood_', '').split('_')[0];
@@ -276,7 +424,6 @@ client.on('interactionCreate', async (interaction) => {
             });
 
             try {
-                const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
                 const oldComponents = interaction.message.components[0]?.components || [];
                 const newButtons = oldComponents.map(btn => {
                     const btnUserId = btn.customId.replace('discipline_understood_', '').split('_')[0];
@@ -298,14 +445,11 @@ client.on('interactionCreate', async (interaction) => {
             const pendingData = client._disciplinePending?.get(groupName);
             if (pendingData) pendingData.pendingKicks.delete(userId);
 
-            // Update MongoDB
-            if (pendingData) {
-                await DisciplinePending.findOneAndUpdate(
-                    { groupName },
-                    { pendingKicks: [...pendingData.pendingKicks] },
-                    { new: true }
-                ).catch(console.error);
-            }
+            await DisciplinePending.findOneAndUpdate(
+                { groupName },
+                { pendingKicks: [...(pendingData?.pendingKicks || [])] },
+                { new: true }
+            ).catch(console.error);
 
             const guild = await client.guilds.fetch(interaction.guildId).catch(() => null);
             if (!guild) return;
@@ -355,7 +499,6 @@ client.on('interactionCreate', async (interaction) => {
                         if (ch) await ch.setParent(TERMINATED_CATEGORY_ID, { lockPermissions: false }).catch(console.error);
                     }
                 }
-                // Delete from MongoDB
                 await DisciplinePending.findOneAndDelete({ groupName }).catch(console.error);
                 client._disciplinePending.delete(groupName);
                 client._disciplineAcks.delete(groupName);
