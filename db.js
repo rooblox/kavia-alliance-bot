@@ -73,10 +73,18 @@ const qotdScheduleSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 
+const awarenessScheduleSchema = new mongoose.Schema({
+    monthKey: { type: String, required: true, unique: true },
+    messageId: { type: String, default: null },
+    entries: { type: Array, default: [] },
+    createdAt: { type: Date, default: Date.now }
+});
+
 const Alliance = mongoose.models.Alliance || mongoose.model('Alliance', allianceSchema);
 const AllianceListMessage = mongoose.models.AllianceListMessage || mongoose.model('AllianceListMessage', allianceListMessageSchema);
 const DisciplinePending = mongoose.models.DisciplinePending || mongoose.model('DisciplinePending', disciplinePendingSchema);
 const StrikePending = mongoose.models.StrikePending || mongoose.model('StrikePending', strikePendingSchema);
 const QotdSchedule = mongoose.models.QotdSchedule || mongoose.model('QotdSchedule', qotdScheduleSchema);
+const AwarenessSchedule = mongoose.models.AwarenessSchedule || mongoose.model('AwarenessSchedule', awarenessScheduleSchema);
 
-module.exports = { connectDB, Alliance, AllianceListMessage, DisciplinePending, StrikePending, QotdSchedule };
+module.exports = { connectDB, Alliance, AllianceListMessage, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule };

@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const { Client, Collection, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { connectDB, DisciplinePending, StrikePending, QotdSchedule } = require('./db');
+const { connectDB, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule } = require('./db');
 
 const ALLOWED_ROLE_ID = '1485100238715883720';
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -85,14 +85,13 @@ client.once('ready', async () => {
         await deployToGuild(guild.id);
     }
 
-    // ── QOTD Scheduler ──
+    // ── QOTD + Awareness Scheduler ──
     const qotdCmd = client.commands.get('qotd');
+    const awarenessCmd = client.commands.get('awareness');
 
     setInterval(async () => {
         try {
             const now = new Date();
-
-            // Use America/New_York to handle EST/EDT automatically
             const estString = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
             const estDate = new Date(estString);
             const estHour = estDate.getHours();
@@ -101,7 +100,7 @@ client.once('ready', async () => {
             const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
             const todayName = dayNames[estDay];
 
-            // Sunday 11PM EST reset
+            // Sunday 11PM EST QOTD reset
             if (estDay === 0 && estHour === 23 && estMin === 0) {
                 try {
                     const weekStart = qotdCmd.getWeekStart();
@@ -168,92 +167,141 @@ client.once('ready', async () => {
                 }
             }
 
-            // 9AM EST daily reminder
+            // 9AM EST QOTD daily reminder
             if (estHour === 9 && estMin === 0) {
                 try {
                     const weekStart = qotdCmd.getWeekStart();
                     const schedule = await QotdSchedule.findOne({ weekStart });
-                    if (!schedule) return;
+                    if (schedule) {
+                        const entry = schedule.days[todayName];
+                        if (entry?.userId) {
+                            const reminderChannel = await client.channels.fetch(qotdCmd.REMINDER_CHANNEL_ID).catch(() => null);
+                            if (reminderChannel) {
+                                const row = new ActionRowBuilder().addComponents(
+                                    new ButtonBuilder()
+                                        .setCustomId(`qotd_posted_${todayName}`)
+                                        .setLabel('✅ I\'ve Posted My QOTD!')
+                                        .setStyle(ButtonStyle.Success)
+                                );
 
-                    const entry = schedule.days[todayName];
-                    if (!entry?.userId) return;
+                                await reminderChannel.send({
+                                    content: `<@${entry.userId}>`,
+                                    embeds: [new EmbedBuilder()
+                                        .setTitle('📅 QOTD Reminder!')
+                                        .setDescription(
+                                            `Hey <@${entry.userId}>! 👋\n\n` +
+                                            `You have claimed **${todayName}** for QOTD this week!\n\n` +
+                                            `Please make sure to post your Question of the Day today. Once you've posted it, click the button below to mark it as complete! ✨\n\n` +
+                                            `Remember — completing your QOTD is **required** at least once a week! 💜`
+                                        )
+                                        .setColor(0x9B59B6)
+                                        .setFooter({ text: 'Kavià Café — QOTD System' })
+                                        .setTimestamp()],
+                                    components: [row]
+                                });
 
-                    const reminderChannel = await client.channels.fetch(qotdCmd.REMINDER_CHANNEL_ID).catch(() => null);
-                    if (!reminderChannel) return;
-
-                    const row = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`qotd_posted_${todayName}`)
-                            .setLabel('✅ I\'ve Posted My QOTD!')
-                            .setStyle(ButtonStyle.Success)
-                    );
-
-                    await reminderChannel.send({
-                        content: `<@${entry.userId}>`,
-                        embeds: [new EmbedBuilder()
-                            .setTitle('📅 QOTD Reminder!')
-                            .setDescription(
-                                `Hey <@${entry.userId}>! 👋\n\n` +
-                                `You have claimed **${todayName}** for QOTD this week!\n\n` +
-                                `Please make sure to post your Question of the Day today. Once you've posted it, click the button below to mark it as complete! ✨\n\n` +
-                                `Remember — completing your QOTD is **required** at least once a week! 💜`
-                            )
-                            .setColor(0x9B59B6)
-                            .setFooter({ text: 'Kavià Café — QOTD System' })
-                            .setTimestamp()],
-                        components: [row]
-                    });
-
-                    schedule.days[todayName].reminderSent = true;
-                    schedule.markModified('days');
-                    await schedule.save();
-
+                                schedule.days[todayName].reminderSent = true;
+                                schedule.markModified('days');
+                                await schedule.save();
+                            }
+                        }
+                    }
                 } catch (err) {
                     console.error('Failed to send QOTD reminder:', err);
                 }
+
+                // Awareness daily reminder at 9AM EST
+                try {
+                    if (!awarenessCmd) return;
+                    const monthKey = awarenessCmd.getMonthKey();
+                    const awarenessSchedule = await AwarenessSchedule.findOne({ monthKey });
+                    if (awarenessSchedule) {
+                        const todayString = new Date().toLocaleString('en-US', {
+                            timeZone: 'America/New_York',
+                            month: 'long',
+                            day: 'numeric'
+                        });
+
+                        const awarenessChannel = await client.channels.fetch(awarenessCmd.AWARENESS_CHANNEL_ID).catch(() => null);
+                        if (awarenessChannel) {
+                            for (const entry of awarenessSchedule.entries) {
+                                if (!entry.approved || entry.completed) continue;
+
+                                if (entry.date.toLowerCase().includes(todayString.toLowerCase()) ||
+                                    todayString.toLowerCase().includes(entry.date.toLowerCase())) {
+
+                                    const row = new ActionRowBuilder().addComponents(
+                                        new ButtonBuilder()
+                                            .setCustomId(`awareness_posted_${entry.entryId}`)
+                                            .setLabel('✅ I\'ve Posted My Awareness!')
+                                            .setStyle(ButtonStyle.Success)
+                                    );
+
+                                    await awarenessChannel.send({
+                                        content: `<@${entry.userId}>`,
+                                        embeds: [new EmbedBuilder()
+                                            .setTitle('📢 Awareness Reminder!')
+                                            .setDescription(
+                                                `Hey <@${entry.userId}>! 👋\n\n` +
+                                                `Today is your day to post your awareness!\n\n` +
+                                                `**Title:** ${entry.title}\n\n` +
+                                                `Please make sure to get it posted today. Once you have, click the button below to mark it as complete! ✨💜`
+                                            )
+                                            .setColor(0x9B59B6)
+                                            .setFooter({ text: 'Kavià Café — Awareness Schedule' })
+                                            .setTimestamp()],
+                                        components: [row]
+                                    });
+                                }
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error('Failed to send awareness reminder:', err);
+                }
             }
 
-            // 9PM EST follow-up reminder
+            // 9PM EST QOTD follow-up reminder
             if (estHour === 21 && estMin === 0) {
                 try {
                     const weekStart = qotdCmd.getWeekStart();
                     const schedule = await QotdSchedule.findOne({ weekStart });
-                    if (!schedule) return;
+                    if (schedule) {
+                        const entry = schedule.days[todayName];
+                        if (entry?.userId && !entry.completed) {
+                            const reminderChannel = await client.channels.fetch(qotdCmd.REMINDER_CHANNEL_ID).catch(() => null);
+                            if (reminderChannel) {
+                                const row = new ActionRowBuilder().addComponents(
+                                    new ButtonBuilder()
+                                        .setCustomId(`qotd_posted_${todayName}`)
+                                        .setLabel('✅ I\'ve Posted My QOTD!')
+                                        .setStyle(ButtonStyle.Success)
+                                );
 
-                    const entry = schedule.days[todayName];
-                    if (!entry?.userId || entry.completed) return;
-
-                    const reminderChannel = await client.channels.fetch(qotdCmd.REMINDER_CHANNEL_ID).catch(() => null);
-                    if (!reminderChannel) return;
-
-                    const row = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`qotd_posted_${todayName}`)
-                            .setLabel('✅ I\'ve Posted My QOTD!')
-                            .setStyle(ButtonStyle.Success)
-                    );
-
-                    await reminderChannel.send({
-                        content: `<@${entry.userId}>`,
-                        embeds: [new EmbedBuilder()
-                            .setTitle('⏰ QOTD Follow-Up Reminder!')
-                            .setDescription(
-                                `Hey <@${entry.userId}>! 👋\n\n` +
-                                `Just a follow-up — we haven't seen your **${todayName}** QOTD posted yet!\n\n` +
-                                `Please make sure to get it posted before the day ends. Click the button below once you have! 💜`
-                            )
-                            .setColor('Orange')
-                            .setFooter({ text: 'Kavià Café — QOTD System' })
-                            .setTimestamp()],
-                        components: [row]
-                    });
+                                await reminderChannel.send({
+                                    content: `<@${entry.userId}>`,
+                                    embeds: [new EmbedBuilder()
+                                        .setTitle('⏰ QOTD Follow-Up Reminder!')
+                                        .setDescription(
+                                            `Hey <@${entry.userId}>! 👋\n\n` +
+                                            `Just a follow-up — we haven't seen your **${todayName}** QOTD posted yet!\n\n` +
+                                            `Please make sure to get it posted before the day ends. Click the button below once you have! 💜`
+                                        )
+                                        .setColor('Orange')
+                                        .setFooter({ text: 'Kavià Café — QOTD System' })
+                                        .setTimestamp()],
+                                    components: [row]
+                                });
+                            }
+                        }
+                    }
                 } catch (err) {
                     console.error('Failed to send QOTD follow-up reminder:', err);
                 }
             }
 
         } catch (err) {
-            console.error('QOTD scheduler error:', err);
+            console.error('Scheduler error:', err);
         }
     }, 60 * 1000);
 });
@@ -355,6 +403,12 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId.startsWith('qotd_')) {
         const qotd = client.commands.get('qotd');
         if (qotd) await qotd.handleButton(interaction, client);
+        return;
+    }
+
+    if (interaction.customId.startsWith('awareness_')) {
+        const awareness = client.commands.get('awareness');
+        if (awareness) await awareness.handleButton(interaction, client);
         return;
     }
 
@@ -579,6 +633,11 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId.startsWith('topost_modal_')) {
         const topost = client.commands.get('topost');
         if (topost) await topost.handleModal(interaction, client);
+    }
+
+    if (interaction.customId === 'awareness_modal') {
+        const awareness = client.commands.get('awareness');
+        if (awareness) await awareness.handleModal(interaction, client);
     }
 });
 
