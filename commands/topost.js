@@ -33,7 +33,7 @@ module.exports = {
     async handleButton(interaction, client) {
         const customId = interaction.customId;
 
-        // ── COMPOSE BUTTON ──
+        // ── COMPOSE BUTTON — open modal ──
         if (customId.startsWith('topost_compose_')) {
             const userId = customId.replace('topost_compose_', '');
             if (interaction.user.id !== userId) {
@@ -44,15 +44,36 @@ module.exports = {
                 .setCustomId(`topost_modal_${userId}`)
                 .setTitle('Compose Alliance Message');
 
-            const messageInput = new TextInputBuilder()
-                .setCustomId('topost_message')
-                .setLabel('Message')
-                .setStyle(TextInputStyle.Paragraph)
-                .setPlaceholder('Type your message here. Formatting and spacing will be preserved.')
-                .setRequired(true)
-                .setMaxLength(2000);
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('topost_title')
+                        .setLabel('Title')
+                        .setStyle(TextInputStyle.Short)
+                        .setPlaceholder('e.g. Media Team Applications')
+                        .setRequired(true)
+                        .setMaxLength(256)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('topost_message')
+                        .setLabel('Message')
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setPlaceholder('Type your message here. Markdown formatting will be preserved.')
+                        .setRequired(true)
+                        .setMaxLength(4000)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('topost_footer')
+                        .setLabel('Footer (optional)')
+                        .setStyle(TextInputStyle.Short)
+                        .setPlaceholder('e.g. Signed, Nina | PRD Lead')
+                        .setRequired(false)
+                        .setMaxLength(256)
+                )
+            );
 
-            modal.addComponents(new ActionRowBuilder().addComponents(messageInput));
             await interaction.showModal(modal);
         }
 
@@ -134,12 +155,13 @@ module.exports = {
                 }
 
                 try {
+                    // Ping + deadline warning
                     await channel.send({
                         content: `<@&${ALLIED_REPS_ROLE_ID}>`,
                         embeds: [new EmbedBuilder()
                             .setDescription(
                                 `📢 **You have a new post to share in your server!**\n\n` +
-                                `Please copy the message below and post it in your server within **48 hours**.\n\n` +
+                                `Please copy and post the message below in your server within **48 hours**.\n\n` +
                                 `Failure to do so without a valid reason may result in a **strike** against your alliance.\n\n` +
                                 `If you have any questions or need an extension, please reach out to a member of **PR Leadership** as soon as possible.`
                             )
@@ -149,7 +171,17 @@ module.exports = {
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
 
-                    await channel.send({ content: session.message });
+                    // Send the message as a clean embed
+                    const messageEmbed = new EmbedBuilder()
+                        .setTitle(session.title)
+                        .setDescription(session.message)
+                        .setColor(0x9B59B6);
+
+                    if (session.footer) {
+                        messageEmbed.setFooter({ text: session.footer });
+                    }
+
+                    await channel.send({ embeds: [messageEmbed] });
 
                     const key = `${userId}_${alliance.welcomeChannelId}`;
                     activeToposts.set(key, {
@@ -263,6 +295,7 @@ module.exports = {
                             { name: 'Started By', value: interaction.user.tag, inline: true },
                             { name: 'Sent To', value: `${sent} alliance(s)`, inline: true },
                             { name: 'Failed', value: failed > 0 ? `${failed} alliance(s)\n${failedAlliances.join('\n')}` : 'None', inline: false },
+                            { name: 'Title', value: session.title, inline: false },
                             { name: 'Message Preview', value: session.message.slice(0, 1024), inline: false },
                             { name: 'Date', value: new Date().toLocaleString(), inline: false }
                         )
@@ -309,7 +342,6 @@ module.exports = {
                 components: []
             });
 
-            // Update tracking embed
             if (topost.trackingMessageId) {
                 const logChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
                 if (logChannel) {
@@ -379,9 +411,11 @@ module.exports = {
         const userId = interaction.customId.replace('topost_modal_', '');
         if (interaction.user.id !== userId) return;
 
+        const title = interaction.fields.getTextInputValue('topost_title');
         const message = interaction.fields.getTextInputValue('topost_message');
+        const footer = interaction.fields.getTextInputValue('topost_footer') || null;
 
-        activeToposts.set(userId, { message });
+        activeToposts.set(userId, { title, message, footer });
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -394,13 +428,21 @@ module.exports = {
                 .setStyle(ButtonStyle.Danger)
         );
 
+        const previewEmbed = new EmbedBuilder()
+            .setTitle(title)
+            .setDescription(message)
+            .setColor(0x9B59B6);
+
+        if (footer) previewEmbed.setFooter({ text: footer });
+
         await interaction.reply({
-            embeds: [new EmbedBuilder()
-                .setTitle('📢 Preview — Confirm Send')
-                .setDescription(`**Message:**\n\n${message}`)
-                .setColor(0x9B59B6)
-                .setFooter({ text: 'This will be sent to all alliance channels with the allied reps role pinged.' })
-                .setTimestamp()],
+            embeds: [
+                new EmbedBuilder()
+                    .setTitle('📢 Preview — Confirm Send')
+                    .setDescription('This is how your message will look in each alliance channel. Confirm to send to all alliances.')
+                    .setColor(0x9B59B6),
+                previewEmbed
+            ],
             components: [row],
             ephemeral: true
         });
@@ -429,7 +471,6 @@ module.exports = {
 
         await message.react('👀').catch(() => {});
 
-        // Send confirm button pinging staff
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId(`topost_confirm_${message.channel.id}`)
@@ -454,7 +495,6 @@ module.exports = {
             allowedMentions: { roles: [STAFF_ROLE_ID] }
         });
 
-        // Update tracking to awaiting review
         if (topost.trackingMessageId) {
             const logChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
             if (logChannel) {
@@ -498,7 +538,6 @@ module.exports = {
             }
         }
 
-        // Log
         const logChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
         if (logChannel) {
             await logChannel.send({
