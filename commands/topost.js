@@ -66,7 +66,7 @@ module.exports = {
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
                         .setCustomId('topost_footer')
-                        .setLabel('Footer (optional)')
+                        .setLabel('Footer / Signature (optional)')
                         .setStyle(TextInputStyle.Short)
                         .setPlaceholder('e.g. Signed, Nina | PRD Lead')
                         .setRequired(false)
@@ -96,6 +96,13 @@ module.exports = {
             let failed = 0;
             const failedAlliances = [];
 
+            const formattedMessage = [
+                `**${session.title}**`,
+                ``,
+                session.message,
+                session.footer ? `\n**${session.footer}**` : ''
+            ].filter(line => line !== undefined).join('\n');
+
             const buildTrackingEmbed = (alliances, toposts) => {
                 const sections = ['Restaurants', 'Cafes', 'Others'];
                 const lines = [];
@@ -111,10 +118,8 @@ module.exports = {
                             return;
                         }
                         const t = toposts.get(`${userId}_${a.welcomeChannelId}`);
-                        if (!t) {
-                            lines.push(`⚠️ **${a.groupName}** — Failed to send`);
-                        } else if (t.confirmed) {
-                            lines.push(`✅ **${a.groupName}** — Confirmed`);
+                        if (!t || t.confirmed) {
+                            lines.push(t?.confirmed ? `✅ **${a.groupName}** — Confirmed` : `⚠️ **${a.groupName}** — Failed to send`);
                         } else if (t.responded) {
                             lines.push(`🔵 **${a.groupName}** — Awaiting staff review`);
                         } else if (t.noResponse) {
@@ -155,7 +160,7 @@ module.exports = {
                 }
 
                 try {
-                    // Ping + deadline warning
+                    // Instructions embed
                     await channel.send({
                         content: `<@&${ALLIED_REPS_ROLE_ID}>`,
                         embeds: [new EmbedBuilder()
@@ -171,17 +176,8 @@ module.exports = {
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
 
-                    // Send the message as a clean embed
-                    const messageEmbed = new EmbedBuilder()
-                        .setTitle(session.title)
-                        .setDescription(session.message)
-                        .setColor(0x9B59B6);
-
-                    if (session.footer) {
-                        messageEmbed.setFooter({ text: session.footer });
-                    }
-
-                    await channel.send({ embeds: [messageEmbed] });
+                    // Send as plain text so it's copyable
+                    await channel.send({ content: formattedMessage });
 
                     const key = `${userId}_${alliance.welcomeChannelId}`;
                     activeToposts.set(key, {
@@ -206,9 +202,8 @@ module.exports = {
 
                     // 24 hour reminder
                     setTimeout(async () => {
-                        const key = `${userId}_${alliance.welcomeChannelId}`;
-                        const topost = activeToposts.get(key);
-                        if (!topost || topost.responded || topost.confirmed) return;
+                        const t = activeToposts.get(key);
+                        if (!t || t.responded || t.confirmed) return;
 
                         await channel.send({
                             content: `<@&${ALLIED_REPS_ROLE_ID}>`,
@@ -216,7 +211,7 @@ module.exports = {
                                 .setDescription(
                                     `⏰ **Friendly Reminder!**\n\n` +
                                     `You still have a pending post that needs to be shared in your server.\n\n` +
-                                    `You have **24 hours** remaining before the deadline. Please make sure to get this posted as soon as possible to avoid any issues with your alliance standing.\n\n` +
+                                    `You have **24 hours** remaining before the deadline. Please make sure to get this posted as soon as possible.\n\n` +
                                     `If you need assistance or require an extension, please reach out to **PR Leadership** right away.`
                                 )
                                 .setColor('Yellow')
@@ -228,11 +223,10 @@ module.exports = {
 
                     // 48 hour deadline
                     setTimeout(async () => {
-                        const key = `${userId}_${alliance.welcomeChannelId}`;
-                        const topost = activeToposts.get(key);
-                        if (!topost || topost.responded || topost.confirmed) return;
+                        const t = activeToposts.get(key);
+                        if (!t || t.responded || t.confirmed) return;
 
-                        topost.noResponse = true;
+                        t.noResponse = true;
 
                         if (trackingMessage) {
                             await trackingMessage.edit({
@@ -262,8 +256,8 @@ module.exports = {
                             embeds: [new EmbedBuilder()
                                 .setDescription(
                                     `⚠️ **Deadline Passed**\n\n` +
-                                    `The 48 hour posting deadline has passed without confirmation. PR Leadership has been notified and this may be reviewed for alliance standing purposes.\n\n` +
-                                    `If you believe this is a mistake or have a valid reason for the delay, please reach out to **PR Leadership** immediately.`
+                                    `The 48 hour posting deadline has passed without confirmation. PR Leadership has been notified.\n\n` +
+                                    `If you have a valid reason for the delay, please reach out to **PR Leadership** immediately.`
                                 )
                                 .setColor('Red')
                                 .setFooter({ text: 'Kavià Café — Public Relations Department' })
@@ -417,6 +411,13 @@ module.exports = {
 
         activeToposts.set(userId, { title, message, footer });
 
+        const previewText = [
+            `**${title}**`,
+            ``,
+            message,
+            footer ? `\n**${footer}**` : ''
+        ].filter(line => line !== undefined).join('\n');
+
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId(`topost_send_${userId}`)
@@ -428,21 +429,12 @@ module.exports = {
                 .setStyle(ButtonStyle.Danger)
         );
 
-        const previewEmbed = new EmbedBuilder()
-            .setTitle(title)
-            .setDescription(message)
-            .setColor(0x9B59B6);
-
-        if (footer) previewEmbed.setFooter({ text: footer });
-
         await interaction.reply({
-            embeds: [
-                new EmbedBuilder()
-                    .setTitle('📢 Preview — Confirm Send')
-                    .setDescription('This is how your message will look in each alliance channel. Confirm to send to all alliances.')
-                    .setColor(0x9B59B6),
-                previewEmbed
-            ],
+            content: previewText,
+            embeds: [new EmbedBuilder()
+                .setTitle('📢 Preview — Confirm Send')
+                .setDescription('This is how your message will look in each alliance channel. Confirm to send to all alliances.')
+                .setColor(0x9B59B6)],
             components: [row],
             ephemeral: true
         });
@@ -494,49 +486,6 @@ module.exports = {
             components: [row],
             allowedMentions: { roles: [STAFF_ROLE_ID] }
         });
-
-        if (topost.trackingMessageId) {
-            const logChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
-            if (logChannel) {
-                const trackingMessage = await logChannel.messages.fetch(topost.trackingMessageId).catch(() => null);
-                if (trackingMessage) {
-                    const sections = ['Restaurants', 'Cafes', 'Others'];
-                    const lines = [];
-
-                    sections.forEach(section => {
-                        const list = topost.alliances.filter(a => a.section === section);
-                        if (!list.length) return;
-                        lines.push(`\n**— ${section} —**`);
-                        list.forEach(a => {
-                            if (!a.welcomeChannelId) {
-                                lines.push(`⚠️ **${a.groupName}** — No channel set`);
-                                return;
-                            }
-                            const key = `${topost.userId}_${a.welcomeChannelId}`;
-                            const t = activeToposts.get(key);
-                            if (!t || t.confirmed) {
-                                lines.push(`✅ **${a.groupName}** — Confirmed`);
-                            } else if (t.responded) {
-                                lines.push(`🔵 **${a.groupName}** — Awaiting staff review`);
-                            } else if (t.noResponse) {
-                                lines.push(`❌ **${a.groupName}** — No response (48hrs)`);
-                            } else {
-                                lines.push(`⏳ **${a.groupName}** — Awaiting post`);
-                            }
-                        });
-                    });
-
-                    await trackingMessage.edit({
-                        embeds: [new EmbedBuilder()
-                            .setTitle('📢 To Post Tracker')
-                            .setDescription(lines.join('\n'))
-                            .setColor(0x9B59B6)
-                            .setFooter({ text: 'Updates automatically' })
-                            .setTimestamp()]
-                    }).catch(() => {});
-                }
-            }
-        }
 
         const logChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
         if (logChannel) {
