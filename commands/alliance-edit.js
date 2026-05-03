@@ -24,6 +24,12 @@ module.exports = {
         .addUserOption(option =>
             option.setName('our_rep_2')
                 .setDescription('Update our second rep'))
+        .addRoleOption(option =>
+            option.setName('rep_role')
+                .setDescription('Set the existing role for their reps'))
+        .addRoleOption(option =>
+            option.setName('our_rep_role')
+                .setDescription('Set the existing role for our reps'))
         .addChannelOption(option =>
             option.setName('welcome_channel')
                 .setDescription('Set or update the alliance channel')
@@ -47,6 +53,8 @@ module.exports = {
             const theirRep2 = interaction.options.getMember('their_rep_2');
             const ourRep1 = interaction.options.getMember('our_rep_1');
             const ourRep2 = interaction.options.getMember('our_rep_2');
+            const repRole = interaction.options.getRole('rep_role');
+            const ourRepRole = interaction.options.getRole('our_rep_role');
             const welcomeChannel = interaction.options.getChannel('welcome_channel');
             const discordLink = interaction.options.getString('discord_link');
             const robloxLink = interaction.options.getString('roblox_link');
@@ -56,6 +64,16 @@ module.exports = {
             if (!alliance) return await interaction.editReply(`❌ Alliance **${groupName}** not found.`);
 
             const guild = interaction.guild;
+
+            // ── Update rep roles if provided ──
+            if (repRole) {
+                alliance.repRoleId = repRole.id;
+                alliance.markModified('repRoleId');
+            }
+            if (ourRepRole) {
+                alliance.ourRepRoleId = ourRepRole.id;
+                alliance.markModified('ourRepRoleId');
+            }
 
             // ── Update welcome channel ──
             if (welcomeChannel) {
