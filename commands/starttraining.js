@@ -1,6 +1,8 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 
 const LOG_CHANNEL_ID = '1485119755206791289';
+const AGE_VERIFY_LOG_CHANNEL_ID = '1500601790855647265';
+const TRAINING_ROLE_ID = '1485100238715883720';
 
 const TRAININGS = {
     basic_training: {
@@ -84,10 +86,16 @@ const TRAININGS = {
     },
     intro_to_mentorship: {
         name: 'Intro to Mentorship',
+        ageVerifySectionIndex: 1,
         sections: [
             {
                 title: '📢 Welcome to Intro to Mentorship',
                 content: `Hello! Congratulations on joining the mentorship program at Kavià Café. This training will walk you through everything you need to know about handling tickets, your responsibilities as a High Rank, and how to best support the team.\n\nPlease read each section carefully and click **Done** when you are ready to move on.`
+            },
+            {
+                title: '📋 Age Verification',
+                content: `Before proceeding to the next stage of your internship, you are required to complete age verification to confirm that you are **13 years of age or older**.\n\n**To verify your age, please follow these steps:**\n1. Open the Roblox App\n2. Go to **Settings**\n3. Select **Account Info**\n4. Navigate to **Personal**\n5. Take a screenshot of the attached page *(see photo below)*\n\nBelow you will find an example of how your screenshot should appear. You are allowed to cross out or blur any other personal information shown in the image for your privacy. However, your **username** and **age** must remain visible so that staff can confirm your eligibility.\n\n**Privacy Notice**\nAt Kavià Café, we respect and value your privacy. Your age verification screenshot will only be reviewed for confirmation purposes and will not be shared outside of the designated verification channel. Staff members will only access this information to confirm that you meet the 13+ age requirement.\n\n*If it is confirmed that you are under the age of 13, you will be removed from the community in accordance with platform policies. Refusal to complete age verification will result in immediate termination of your internship.*\n*Age verification must be completed in order to proceed.*\n\n**Please reply to this message with your screenshot or image link to submit your verification.**`,
+                image: 'https://cdn.discordapp.com/attachments/1426346648405151755/1496261473931100272/Screenshot_20260101_161503_Roblox.jpg?ex=69f866d6&is=69f71556&hm=327749ccbc1031c8ff630d4ee4623d39171d51597348dae31219df325f0167ba&'
             },
             {
                 title: '🎫 Ticket Categories — Part 1',
@@ -153,6 +161,7 @@ const TRAININGS = {
 
 const activeSessions = new Map();
 const helpMessages = new Map();
+const ageVerifyPending = new Map();
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -198,6 +207,7 @@ module.exports = {
                 startedBy: interaction.user.tag,
                 helpCount: 0,
                 waitingForHelp: false,
+                waitingForAgeVerify: false,
                 trainingKey
             });
 
@@ -245,6 +255,49 @@ module.exports = {
             const training = TRAININGS[session.trainingKey];
             await interaction.update({ components: [] });
             session.section++;
+
+            // ── Check if next section is age verification ──
+            if (training.ageVerifySectionIndex !== undefined && session.section === training.ageVerifySectionIndex) {
+                session.waitingForAgeVerify = true;
+                const section = training.sections[session.section];
+
+                const embed = new EmbedBuilder()
+                    .setTitle(section.title)
+                    .setDescription(section.content)
+                    .setColor(0x9B59B6)
+                    .setImage(section.image)
+                    .setFooter({ text: 'Please reply with your screenshot or image link to submit your verification.' })
+                    .setTimestamp();
+
+                await interaction.user.send({ embeds: [embed] });
+
+                // Set 12 hour re-ping
+                setTimeout(async () => {
+                    const s = activeSessions.get(userId);
+                    if (!s || !s.waitingForAgeVerify) return;
+                    try {
+                        const ageVerifyLogChannel = await client.channels.fetch(AGE_VERIFY_LOG_CHANNEL_ID).catch(() => null);
+                        if (ageVerifyLogChannel) {
+                            await ageVerifyLogChannel.send({
+                                content: `<@&${TRAINING_ROLE_ID}> ⏰ **Reminder:** Age verification submission from <@${userId}> has not been reviewed yet!`,
+                                embeds: [new EmbedBuilder()
+                                    .setTitle('⏰ Age Verification — Pending Review Reminder')
+                                    .setColor('Orange')
+                                    .addFields(
+                                        { name: 'Trainee', value: `<@${userId}>`, inline: true },
+                                        { name: 'Status', value: '⏳ Awaiting Review', inline: true },
+                                        { name: 'Submitted', value: 'Over 12 hours ago', inline: true }
+                                    )
+                                    .setTimestamp()]
+                            });
+                        }
+                    } catch (err) {
+                        console.error('Failed to send age verify re-ping:', err);
+                    }
+                }, 12 * 60 * 60 * 1000);
+
+                return;
+            }
 
             if (session.section >= training.sections.length) {
                 session.phase = 'quiz';
@@ -326,6 +379,92 @@ module.exports = {
             }
         }
 
+        // ── AGE VERIFY ACCEPT BUTTON ──
+        if (customId.startsWith('ageverify_accept_')) {
+            const userId = customId.replace('ageverify_accept_', '');
+            const session = activeSessions.get(userId);
+
+            if (!session) {
+                return interaction.reply({ content: '❌ This training session is no longer active.', ephemeral: true });
+            }
+
+            session.waitingForAgeVerify = false;
+            ageVerifyPending.delete(userId);
+
+            const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+                .setTitle('📋 Age Verification — ✅ Accepted')
+                .setColor('Green')
+                .spliceFields(3, 1, { name: 'Status', value: `✅ Accepted by ${interaction.user.tag}`, inline: true });
+
+            await interaction.update({ embeds: [updatedEmbed], components: [] });
+
+            try {
+                const user = await client.users.fetch(userId);
+                await user.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('✅ Age Verification Accepted!')
+                        .setDescription('Your age verification has been accepted! You may now continue your training. 💜')
+                        .setColor('Green')
+                        .setTimestamp()]
+                });
+
+                // Continue to next section
+                const training = TRAININGS[session.trainingKey];
+                session.section++;
+
+                if (session.section >= training.sections.length) {
+                    session.phase = 'quiz';
+                    session.quizIndex = 0;
+                    session.quizAnswers = [];
+
+                    await user.send({
+                        embeds: [new EmbedBuilder()
+                            .setTitle('📝 Final Quiz')
+                            .setDescription(`Great job completing the training! You will now be asked **${training.questions.length} questions**.\n\nSelect your answer using the buttons below each question.`)
+                            .setColor(0x9B59B6)
+                            .setTimestamp()]
+                    });
+
+                    setTimeout(async () => {
+                        await user.send({
+                            embeds: [buildQuestionEmbed(training, 0)],
+                            components: [buildQuizRow(userId, 0)]
+                        });
+                    }, 1500);
+                } else {
+                    await user.send({
+                        embeds: [buildSectionEmbed(training, session.section)],
+                        components: [buildSectionRow(userId, session.section)]
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to continue training after age verify accept:', err);
+            }
+        }
+
+        // ── AGE VERIFY DENY BUTTON — open modal for reason ──
+        if (customId.startsWith('ageverify_deny_')) {
+            const userId = customId.replace('ageverify_deny_', '');
+
+            const modal = new ModalBuilder()
+                .setCustomId(`ageverify_deny_modal_${userId}`)
+                .setTitle('Deny Age Verification');
+
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('deny_reason')
+                        .setLabel('Reason for denial')
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setPlaceholder('e.g. Age not visible, wrong screenshot, etc.')
+                        .setRequired(true)
+                        .setMaxLength(500)
+                )
+            );
+
+            await interaction.showModal(modal);
+        }
+
         // ── QUIZ ANSWER BUTTONS ──
         if (customId.startsWith('quiz_')) {
             const parts = customId.replace('quiz_', '').split('_');
@@ -370,14 +509,14 @@ module.exports = {
                 const passMark = training.name === 'Intro to Mentorship' ? 3 : 6;
                 const autoPass = score >= passMark;
 
-                const completionEmbed = new EmbedBuilder()
-                    .setTitle('📋 Quiz Submitted!')
-                    .setDescription(`You have completed the quiz! A member of PR Leadership will review your results shortly.`)
-                    .setColor(0x9B59B6)
-                    .addFields({ name: 'Your Score', value: `${score}/${training.questions.length}`, inline: true })
-                    .setTimestamp();
-
-                await interaction.user.send({ embeds: [completionEmbed] });
+                await interaction.user.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('📋 Quiz Submitted!')
+                        .setDescription(`You have completed the quiz! A member of PR Leadership will review your results shortly.`)
+                        .setColor(0x9B59B6)
+                        .addFields({ name: 'Your Score', value: `${score}/${training.questions.length}`, inline: true })
+                        .setTimestamp()]
+                });
 
                 if (logChannel) {
                     const breakdown = session.quizAnswers.map((a, i) =>
@@ -443,6 +582,7 @@ module.exports = {
 
             activeSessions.delete(userId);
             helpMessages.delete(userId);
+            ageVerifyPending.delete(userId);
         }
 
         // ── FAIL BUTTON ──
@@ -480,6 +620,7 @@ module.exports = {
                         startedBy: session?.startedBy || 'Unknown',
                         helpCount: 0,
                         waitingForHelp: false,
+                        waitingForAgeVerify: false,
                         trainingKey
                     });
                     await user.send({
@@ -493,6 +634,7 @@ module.exports = {
             }
 
             helpMessages.delete(userId);
+            ageVerifyPending.delete(userId);
         }
 
         // ── RESOLVE HELP BUTTON ──
@@ -504,7 +646,6 @@ module.exports = {
                 return interaction.reply({ content: '❌ This training session is no longer active.', ephemeral: true });
             }
 
-            const training = TRAININGS[session.trainingKey];
             session.waitingForHelp = false;
 
             const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
@@ -529,17 +670,114 @@ module.exports = {
         }
     },
 
+    async handleModal(interaction, client) {
+        if (!interaction.customId.startsWith('ageverify_deny_modal_')) return;
+
+        const userId = interaction.customId.replace('ageverify_deny_modal_', '');
+        const reason = interaction.fields.getTextInputValue('deny_reason');
+        const session = activeSessions.get(userId);
+
+        if (!session) {
+            return interaction.reply({ content: '❌ This training session is no longer active.', ephemeral: true });
+        }
+
+        const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+            .setTitle('📋 Age Verification — ❌ Denied')
+            .setColor('Red')
+            .spliceFields(3, 1, { name: 'Status', value: `❌ Denied by ${interaction.user.tag}\n**Reason:** ${reason}`, inline: true });
+
+        await interaction.update({ embeds: [updatedEmbed], components: [] });
+
+        try {
+            const user = await client.users.fetch(userId);
+            await user.send({
+                embeds: [new EmbedBuilder()
+                    .setTitle('❌ Age Verification Denied')
+                    .setDescription(
+                        `Unfortunately your age verification submission was **denied**.\n\n` +
+                        `**Reason:** ${reason}\n\n` +
+                        `Please resubmit your verification by replying with a new screenshot that meets the requirements. Make sure your **username** and **age** are clearly visible. 💜`
+                    )
+                    .setColor('Red')
+                    .setTimestamp()]
+            });
+        } catch (err) {
+            console.error('Failed to DM trainee on age verify deny:', err);
+        }
+    },
+
     async handleMessage(message, client) {
         if (message.author.bot) return;
         if (message.guild) return;
+
         const session = activeSessions.get(message.author.id);
         if (!session) return;
+
         await message.react('👀').catch(() => {});
+
+        // ── Handle age verify submission ──
+        if (session.waitingForAgeVerify) {
+            const hasImage = message.attachments.size > 0 || message.content.match(/https?:\/\/\S+\.(jpg|jpeg|png|gif|webp)/i);
+
+            if (!hasImage) {
+                await message.reply('⚠️ Please send a **screenshot or image link** for your age verification.');
+                return;
+            }
+
+            const imageUrl = message.attachments.first()?.url || message.content.match(/https?:\/\/\S+/)?.[0];
+
+            ageVerifyPending.set(message.author.id, {
+                userId: message.author.id,
+                imageUrl,
+                submittedAt: Date.now()
+            });
+
+            const ageVerifyLogChannel = await client.channels.fetch(AGE_VERIFY_LOG_CHANNEL_ID).catch(() => null);
+            if (ageVerifyLogChannel) {
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`ageverify_accept_${message.author.id}`)
+                        .setLabel('✅ Accept')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId(`ageverify_deny_${message.author.id}`)
+                        .setLabel('❌ Deny')
+                        .setStyle(ButtonStyle.Danger)
+                );
+
+                await ageVerifyLogChannel.send({
+                    content: `<@&${TRAINING_ROLE_ID}>`,
+                    embeds: [new EmbedBuilder()
+                        .setTitle('📋 Age Verification Submission')
+                        .setColor(0x9B59B6)
+                        .addFields(
+                            { name: 'Trainee', value: `<@${message.author.id}>`, inline: true },
+                            { name: 'Training', value: TRAININGS[session.trainingKey].name, inline: true },
+                            { name: 'Submitted At', value: new Date().toLocaleString(), inline: true },
+                            { name: 'Status', value: '⏳ Awaiting Review', inline: true }
+                        )
+                        .setImage(imageUrl)
+                        .setTimestamp()],
+                    components: [row]
+                });
+            }
+
+            await message.reply({
+                embeds: [new EmbedBuilder()
+                    .setTitle('📋 Verification Submitted!')
+                    .setDescription('Your age verification has been submitted and is awaiting review by PR Leadership. You will be notified once it has been reviewed. 💜')
+                    .setColor(0x9B59B6)
+                    .setTimestamp()]
+            });
+
+            return;
+        }
     }
 };
 
 module.exports.activeSessions = activeSessions;
 module.exports.helpMessages = helpMessages;
+module.exports.ageVerifyPending = ageVerifyPending;
 
 function buildSectionEmbed(training, index) {
     const section = training.sections[index];

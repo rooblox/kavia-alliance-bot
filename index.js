@@ -226,10 +226,8 @@ client.once('ready', async () => {
                             if (awarenessChannel) {
                                 for (const entry of awarenessSchedule.entries) {
                                     if (!entry.approved || entry.completed) continue;
-
                                     if (entry.date.toLowerCase().includes(todayString.toLowerCase()) ||
                                         todayString.toLowerCase().includes(entry.date.toLowerCase())) {
-
                                         const row = new ActionRowBuilder().addComponents(
                                             new ButtonBuilder()
                                                 .setCustomId(`awareness_posted_${entry.entryId}`)
@@ -680,6 +678,11 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId === 'awareness_modal') {
         const awareness = client.commands.get('awareness');
         if (awareness) await awareness.handleModal(interaction, client);
+    }
+
+    if (interaction.customId.startsWith('ageverify_deny_modal_')) {
+        const starttraining = client.commands.get('starttraining');
+        if (starttraining) await starttraining.handleModal(interaction, client);
     }
 });
 
