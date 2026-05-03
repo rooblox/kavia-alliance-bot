@@ -5,9 +5,10 @@ async function loadAlliances() {
 }
 
 async function saveAlliance(data) {
+    const { _id, __v, ...updateData } = data.toObject ? data.toObject() : data;
     return await Alliance.findOneAndUpdate(
-        { groupName: data.groupName },
-        data,
+        { groupName: updateData.groupName },
+        { $set: updateData },
         { upsert: true, new: true }
     );
 }
