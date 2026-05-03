@@ -73,9 +73,10 @@ async function ensureVerificationFormat(client) {
                 `Welcome to **Kavià | Alliance Hub**! 💜\n\n` +
                 `To gain access as an **Allied Representative**, please post your verification using the format below.\n\n` +
                 `**Copy and fill in the following:**\n\n` +
-                `**Discord Username:** your Discord username\n` +
-                `**Group Representing:** the name of your alliance group\n` +
-                `**Proof of Invite:** attach a screenshot or image link showing your invite\n\n` +
+                `**Discord Username:**\n` +
+                `**Roblox Username:**\n` +
+                `**Group Representing:**\n` +
+                `**Proof of Invite:** *(attach a screenshot or image link)*\n\n` +
                 `Once submitted, a staff member will review your verification and you will be notified via DM. 💜\n\n` +
                 `*Please do not DM staff to ask about your verification status — it will be reviewed as soon as possible.*`
             )
@@ -899,6 +900,9 @@ client.on('messageCreate', async (message) => {
     // ── Verification channel handler ──
     if (message.guild?.id === ALLIANCE_GUILD_ID && message.channel.id === VERIFICATION_CHANNEL_ID) {
         try {
+            // React with hourglass to show it's being processed
+            await message.react('⏳').catch(console.error);
+
             const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
             if (!verifyLogChannel) return;
 
