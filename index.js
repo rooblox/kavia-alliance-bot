@@ -10,6 +10,13 @@ const DISCIPLINE_LOG_CHANNEL_ID = '1456389041770467370';
 const TERMINATED_CATEGORY_ID = '1428837884252786819';
 const WELCOME_CHANNEL_ID = '1385081586873008231';
 const VERIFICATION_CHANNEL_ID = '1417865773271224350';
+const VERIFICATION_LOG_CHANNEL_ID = '1500612010189127891';
+const ALLIED_REPS_ROLE_ID = '1417866883750957188';
+const ALLIANCE_GUILD_ID = '1385081586285940796';
+
+// In-memory store for verification message IDs
+const verificationMessages = new Map();
+let verificationFormatMessageId = null;
 
 const client = new Client({
     intents: [
@@ -40,6 +47,52 @@ async function deployToGuild(guildId) {
         console.log(`✅ Commands deployed to guild: ${guildId}`);
     } catch (err) {
         console.error(`❌ Failed to deploy to guild ${guildId}:`, err.message);
+    }
+}
+
+async function ensureVerificationFormat(client) {
+    try {
+        const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+        if (!channel) return;
+
+        // Check if format message already exists
+        if (verificationFormatMessageId) {
+            const existing = await channel.messages.fetch(verificationFormatMessageId).catch(() => null);
+            if (existing) return;
+        }
+
+        // Try to find it in recent messages
+        const messages = await channel.messages.fetch({ limit: 20 }).catch(() => null);
+        if (messages) {
+            const botMsg = messages.find(m => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0]?.title?.includes('Verification Format'));
+            if (botMsg) {
+                verificationFormatMessageId = botMsg.id;
+                return;
+            }
+        }
+
+        // Post format message
+        const formatEmbed = new EmbedBuilder()
+            .setTitle('✅ Alliance Rep Verification Format')
+            .setDescription(
+                `Welcome to **Kavià | Alliance Hub**! 💜\n\n` +
+                `To gain access as an **Allied Representative**, please post your verification using the format below.\n\n` +
+                `**Copy and fill in the following:**\n\n` +
+                `**Discord Username:** your Discord username\n` +
+                `**Group Representing:** the name of your alliance group\n` +
+                `**Proof of Invite:** attach a screenshot or image link showing your invite\n\n` +
+                `Once submitted, a staff member will review your verification and you will be notified via DM. 💜\n\n` +
+                `*Please do not DM staff to ask about your verification status — it will be reviewed as soon as possible.*`
+            )
+            .setColor(0x9B59B6)
+            .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
+            .setTimestamp();
+
+        const msg = await channel.send({ embeds: [formatEmbed] });
+        verificationFormatMessageId = msg.id;
+        console.log('✅ Verification format message posted');
+    } catch (err) {
+        console.error('Failed to post verification format:', err);
     }
 }
 
@@ -84,6 +137,9 @@ client.once('ready', async () => {
     for (const guild of client.guilds.cache.values()) {
         await deployToGuild(guild.id);
     }
+
+    // Post verification format if needed
+    await ensureVerificationFormat(client);
 
     // ── QOTD + Awareness Scheduler ──
     const qotdCmd = client.commands.get('qotd');
@@ -312,7 +368,7 @@ client.on('guildCreate', async (guild) => {
 
 // Welcome message
 client.on('guildMemberAdd', async (member) => {
-    if (member.guild.id !== '1385081586285940796') return;
+    if (member.guild.id !== ALLIANCE_GUILD_ID) return;
     const channel = await client.channels.fetch(WELCOME_CHANNEL_ID).catch(() => null);
     if (!channel) return;
 
@@ -408,6 +464,114 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId.startsWith('awareness_')) {
         const awareness = client.commands.get('awareness');
         if (awareness) await awareness.handleButton(interaction, client);
+        return;
+    }
+
+    // ── Verification Accept ──
+    if (interaction.customId.startsWith('verify_accept_')) {
+        try {
+            const parts = interaction.customId.replace('verify_accept_', '').split('_');
+            const userId = parts[0];
+            const messageId = parts[1];
+
+            const guild = await client.guilds.fetch(ALLIANCE_GUILD_ID).catch(() => null);
+            if (!guild) return interaction.reply({ content: '❌ Guild not found.', ephemeral: true });
+
+            const member = await guild.members.fetch(userId).catch(() => null);
+            if (!member) {
+                return interaction.reply({ content: '❌ Member not found — they may have left the server.', ephemeral: true });
+            }
+
+            // Give Allied Reps role
+            await member.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
+
+            // Delete original verification message
+            if (messageId) {
+                const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+                if (verifyChannel) {
+                    const originalMsg = await verifyChannel.messages.fetch(messageId).catch(() => null);
+                    if (originalMsg) await originalMsg.delete().catch(console.error);
+                }
+            }
+
+            // Update log embed
+            await interaction.update({
+                embeds: [EmbedBuilder.from(interaction.message.embeds[0])
+                    .setTitle('✅ Verification — Accepted')
+                    .setColor('Green')
+                    .addFields({ name: 'Reviewed By', value: interaction.user.tag, inline: true })],
+                components: []
+            });
+
+            // DM the user
+            try {
+                await member.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('✅ Verification Accepted!')
+                        .setDescription(
+                            `Hey <@${userId}>! 🎉\n\n` +
+                            `Your verification has been **accepted** and you have been given the **Allied Representative** role in the Kavià Alliance Hub!\n\n` +
+                            `You now have access to your alliance channel. If you have any questions, feel free to reach out to PR Leadership.\n\n` +
+                            `Welcome to the hub! ☕💜`
+                        )
+                        .setColor(0x9B59B6)
+                        .setFooter({ text: 'Kavià Café — Alliance Hub' })
+                        .setTimestamp()]
+                });
+            } catch (err) {
+                console.error(`Failed to DM ${userId} on verify accept:`, err);
+            }
+
+            // Remind staff to update alliance
+            const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
+            if (verifyLogChannel) {
+                await verifyLogChannel.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('📋 Alliance Update Reminder')
+                        .setDescription(
+                            `<@${interaction.user.id}> don't forget to update the alliance record for <@${userId}> using **/alliance-edit**!\n\n` +
+                            `Make sure to set their rep in the correct alliance so they receive the proper role and access going forward. 💜`
+                        )
+                        .setColor('Yellow')
+                        .setFooter({ text: 'Kavià Café — PR Leadership Reminder' })
+                        .setTimestamp()]
+                });
+            }
+
+        } catch (err) {
+            console.error('Error handling verify_accept button:', err);
+        }
+        return;
+    }
+
+    // ── Verification Deny ──
+    if (interaction.customId.startsWith('verify_deny_')) {
+        try {
+            const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+            const parts = interaction.customId.replace('verify_deny_', '').split('_');
+            const userId = parts[0];
+            const messageId = parts[1];
+
+            const modal = new ModalBuilder()
+                .setCustomId(`verify_deny_modal_${userId}_${messageId}`)
+                .setTitle('Deny Verification');
+
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('deny_reason')
+                        .setLabel('Reason for denial')
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setPlaceholder('e.g. Missing proof of invite, incorrect format, etc.')
+                        .setRequired(true)
+                        .setMaxLength(500)
+                )
+            );
+
+            await interaction.showModal(modal);
+        } catch (err) {
+            console.error('Error handling verify_deny button:', err);
+        }
         return;
     }
 
@@ -684,11 +848,107 @@ client.on('interactionCreate', async (interaction) => {
         const starttraining = client.commands.get('starttraining');
         if (starttraining) await starttraining.handleModal(interaction, client);
     }
+
+    // ── Verification deny modal ──
+    if (interaction.customId.startsWith('verify_deny_modal_')) {
+        try {
+            const parts = interaction.customId.replace('verify_deny_modal_', '').split('_');
+            const userId = parts[0];
+            const messageId = parts[1];
+            const reason = interaction.fields.getTextInputValue('deny_reason');
+
+            // Update log embed
+            await interaction.update({
+                embeds: [EmbedBuilder.from(interaction.message.embeds[0])
+                    .setTitle('❌ Verification — Denied')
+                    .setColor('Red')
+                    .addFields(
+                        { name: 'Reviewed By', value: interaction.user.tag, inline: true },
+                        { name: 'Reason', value: reason, inline: false }
+                    )],
+                components: []
+            });
+
+            // Delete original verification message
+            if (messageId) {
+                const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+                if (verifyChannel) {
+                    const originalMsg = await verifyChannel.messages.fetch(messageId).catch(() => null);
+                    if (originalMsg) await originalMsg.delete().catch(console.error);
+                }
+            }
+
+            // DM the user
+            try {
+                const user = await client.users.fetch(userId);
+                await user.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('❌ Verification Denied')
+                        .setDescription(
+                            `Hey <@${userId}>,\n\n` +
+                            `Unfortunately your verification submission was **denied**.\n\n` +
+                            `**Reason:** ${reason}\n\n` +
+                            `Please resubmit your verification in <#${VERIFICATION_CHANNEL_ID}> making sure to follow the format correctly and include all required information. 💜`
+                        )
+                        .setColor('Red')
+                        .setFooter({ text: 'Kavià Café — Alliance Hub' })
+                        .setTimestamp()]
+                });
+            } catch (err) {
+                console.error(`Failed to DM ${userId} on verify deny:`, err);
+            }
+        } catch (err) {
+            console.error('Error handling verify_deny_modal:', err);
+        }
+    }
 });
 
 // Handle messages
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
+
+    // ── Verification channel handler ──
+    if (message.guild?.id === ALLIANCE_GUILD_ID && message.channel.id === VERIFICATION_CHANNEL_ID) {
+        try {
+            const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
+            if (!verifyLogChannel) return;
+
+            const imageUrl = message.attachments.first()?.url || null;
+            const contentLinks = message.content.match(/https?:\/\/\S+/g) || [];
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`verify_accept_${message.author.id}_${message.id}`)
+                    .setLabel('✅ Accept')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId(`verify_deny_${message.author.id}_${message.id}`)
+                    .setLabel('❌ Deny')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+            const embed = new EmbedBuilder()
+                .setTitle('📋 New Verification Submission')
+                .setColor(0x9B59B6)
+                .addFields(
+                    { name: 'User', value: `<@${message.author.id}> (${message.author.tag})`, inline: true },
+                    { name: 'Submitted At', value: new Date().toLocaleString(), inline: true },
+                    { name: 'Message Content', value: message.content || '*No text*', inline: false }
+                )
+                .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
+                .setTimestamp();
+
+            if (imageUrl) embed.setImage(imageUrl);
+            if (contentLinks.length > 0 && !imageUrl) {
+                embed.addFields({ name: 'Links', value: contentLinks.join('\n'), inline: false });
+            }
+
+            await verifyLogChannel.send({ embeds: [embed], components: [row] });
+        } catch (err) {
+            console.error('Error handling verification message:', err);
+        }
+        return;
+    }
 
     if (message.guild) {
         const checkin = client.commands.get('checkin');
