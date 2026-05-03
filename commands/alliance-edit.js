@@ -58,6 +58,7 @@ module.exports = {
             // ── Update welcome channel ──
             if (welcomeChannel) {
                 alliance.welcomeChannelId = welcomeChannel.id;
+                alliance.markModified('welcomeChannelId');
             }
 
             // ── Update their reps ──
@@ -73,15 +74,19 @@ module.exports = {
                 const newTheirRepIds = [];
                 if (theirRep1) {
                     if (alliance.repRoleId) await theirRep1.roles.add(alliance.repRoleId).catch(console.error);
+                    await theirRep1.roles.add('1417866883750957188').catch(console.error);
                     newTheirRepIds.push(theirRep1.id);
                 }
                 if (theirRep2) {
                     if (alliance.repRoleId) await theirRep2.roles.add(alliance.repRoleId).catch(console.error);
+                    await theirRep2.roles.add('1417866883750957188').catch(console.error);
                     newTheirRepIds.push(theirRep2.id);
                 }
 
                 alliance.theirRepIds = newTheirRepIds;
                 alliance.theirReps = newTheirRepIds.map(id => `<@${id}>`).join(' ');
+                alliance.markModified('theirRepIds');
+                alliance.markModified('theirReps');
             }
 
             // ── Update our reps ──
@@ -106,11 +111,19 @@ module.exports = {
 
                 alliance.ourRepIds = newOurRepIds;
                 alliance.ourReps = newOurRepIds.map(id => `<@${id}>`).join(' ');
+                alliance.markModified('ourRepIds');
+                alliance.markModified('ourReps');
             }
 
             // ── Update other fields ──
-            if (discordLink) alliance.discordLink = discordLink;
-            if (robloxLink) alliance.robloxLink = robloxLink;
+            if (discordLink) {
+                alliance.discordLink = discordLink;
+                alliance.markModified('discordLink');
+            }
+            if (robloxLink) {
+                alliance.robloxLink = robloxLink;
+                alliance.markModified('robloxLink');
+            }
 
             // ── Rename alliance if requested ──
             if (newGroupName) {
@@ -127,9 +140,10 @@ module.exports = {
                     if (ch) await ch.setName(newGroupName.toLowerCase().replace(/\s+/g, '-')).catch(console.error);
                 }
                 alliance.groupName = newGroupName;
+                alliance.markModified('groupName');
             }
 
-            // ── Send updated welcome message if reps or channel changed ──
+            // ── Send updated welcome message if our reps changed ──
             if ((ourRep1 || ourRep2) && alliance.welcomeChannelId) {
                 const channel = await client.channels.fetch(alliance.welcomeChannelId).catch(() => null);
                 if (channel) {
