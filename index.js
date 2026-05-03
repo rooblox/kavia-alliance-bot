@@ -212,46 +212,47 @@ client.once('ready', async () => {
 
                 // Awareness daily reminder at 9AM EST
                 try {
-                    if (!awarenessCmd) return;
-                    const monthKey = awarenessCmd.getMonthKey();
-                    const awarenessSchedule = await AwarenessSchedule.findOne({ monthKey });
-                    if (awarenessSchedule) {
-                        const todayString = new Date().toLocaleString('en-US', {
-                            timeZone: 'America/New_York',
-                            month: 'long',
-                            day: 'numeric'
-                        });
+                    if (awarenessCmd) {
+                        const monthKey = awarenessCmd.getMonthKey();
+                        const awarenessSchedule = await AwarenessSchedule.findOne({ monthKey });
+                        if (awarenessSchedule) {
+                            const todayString = new Date().toLocaleString('en-US', {
+                                timeZone: 'America/New_York',
+                                month: 'long',
+                                day: 'numeric'
+                            });
 
-                        const awarenessChannel = await client.channels.fetch(awarenessCmd.AWARENESS_CHANNEL_ID).catch(() => null);
-                        if (awarenessChannel) {
-                            for (const entry of awarenessSchedule.entries) {
-                                if (!entry.approved || entry.completed) continue;
+                            const awarenessChannel = await client.channels.fetch(awarenessCmd.AWARENESS_CHANNEL_ID).catch(() => null);
+                            if (awarenessChannel) {
+                                for (const entry of awarenessSchedule.entries) {
+                                    if (!entry.approved || entry.completed) continue;
 
-                                if (entry.date.toLowerCase().includes(todayString.toLowerCase()) ||
-                                    todayString.toLowerCase().includes(entry.date.toLowerCase())) {
+                                    if (entry.date.toLowerCase().includes(todayString.toLowerCase()) ||
+                                        todayString.toLowerCase().includes(entry.date.toLowerCase())) {
 
-                                    const row = new ActionRowBuilder().addComponents(
-                                        new ButtonBuilder()
-                                            .setCustomId(`awareness_posted_${entry.entryId}`)
-                                            .setLabel('✅ I\'ve Posted My Awareness!')
-                                            .setStyle(ButtonStyle.Success)
-                                    );
+                                        const row = new ActionRowBuilder().addComponents(
+                                            new ButtonBuilder()
+                                                .setCustomId(`awareness_posted_${entry.entryId}`)
+                                                .setLabel('✅ I\'ve Posted My Awareness!')
+                                                .setStyle(ButtonStyle.Success)
+                                        );
 
-                                    await awarenessChannel.send({
-                                        content: `<@${entry.userId}>`,
-                                        embeds: [new EmbedBuilder()
-                                            .setTitle('📢 Awareness Reminder!')
-                                            .setDescription(
-                                                `Hey <@${entry.userId}>! 👋\n\n` +
-                                                `Today is your day to post your awareness!\n\n` +
-                                                `**Title:** ${entry.title}\n\n` +
-                                                `Please make sure to get it posted today. Once you have, click the button below to mark it as complete! ✨💜`
-                                            )
-                                            .setColor(0x9B59B6)
-                                            .setFooter({ text: 'Kavià Café — Awareness Schedule' })
-                                            .setTimestamp()],
-                                        components: [row]
-                                    });
+                                        await awarenessChannel.send({
+                                            content: `<@${entry.userId}>`,
+                                            embeds: [new EmbedBuilder()
+                                                .setTitle('📢 Awareness Reminder!')
+                                                .setDescription(
+                                                    `Hey <@${entry.userId}>! 👋\n\n` +
+                                                    `Today is your day to post your awareness!\n\n` +
+                                                    `**Title:** ${entry.title}\n\n` +
+                                                    `Please make sure to get it posted today. Once you have, click the button below to mark it as complete! ✨💜`
+                                                )
+                                                .setColor(0x9B59B6)
+                                                .setFooter({ text: 'Kavià Café — Awareness Schedule' })
+                                                .setTimestamp()],
+                                            components: [row]
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -409,6 +410,47 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId.startsWith('awareness_')) {
         const awareness = client.commands.get('awareness');
         if (awareness) await awareness.handleButton(interaction, client);
+        return;
+    }
+
+    // ── Alliance edit kick prompt ──
+    if (interaction.customId.startsWith('edit_kick_yes_')) {
+        try {
+            const withoutPrefix = interaction.customId.replace('edit_kick_yes_', '');
+            const parts = withoutPrefix.split('_');
+            const repIdsRaw = parts[parts.length - 1];
+            const repIds = repIdsRaw.split('-');
+
+            const guild = await client.guilds.fetch(interaction.guildId).catch(() => null);
+            if (!guild) return interaction.reply({ content: '❌ Guild not found.', ephemeral: true });
+
+            let kicked = 0;
+            let failed = 0;
+            for (const repId of repIds) {
+                const member = await guild.members.fetch(repId).catch(() => null);
+                if (member) {
+                    await member.kick('Removed as alliance rep').catch(console.error);
+                    kicked++;
+                } else {
+                    failed++;
+                }
+            }
+
+            await interaction.update({
+                content: `✅ Done! Kicked **${kicked}** rep(s)${failed > 0 ? ` — **${failed}** could not be found` : ''}.`,
+                components: []
+            });
+        } catch (err) {
+            console.error('Error handling edit_kick_yes button:', err);
+        }
+        return;
+    }
+
+    if (interaction.customId.startsWith('edit_kick_no_')) {
+        await interaction.update({
+            content: '✅ Alliance updated. Removed reps were kept in the server.',
+            components: []
+        });
         return;
     }
 

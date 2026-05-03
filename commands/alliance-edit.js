@@ -1,6 +1,8 @@
-const { SlashCommandBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, ChannelType, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { findAlliance, saveAlliance } = require('../utils/allianceStorage');
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
+
+const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -62,24 +64,31 @@ module.exports = {
             }
 
             // ── Update their reps ──
+            let removedTheirRepIds = [];
             if (theirRep1 || theirRep2) {
                 const oldTheirRepIds = alliance.theirRepIds || [];
+                removedTheirRepIds = oldTheirRepIds.filter(id =>
+                    id !== theirRep1?.id && id !== theirRep2?.id
+                );
+
+                // Remove roles from old reps
                 for (const repId of oldTheirRepIds) {
                     const member = await guild.members.fetch(repId).catch(() => null);
-                    if (member && alliance.repRoleId) {
-                        await member.roles.remove(alliance.repRoleId).catch(console.error);
+                    if (member) {
+                        if (alliance.repRoleId) await member.roles.remove(alliance.repRoleId).catch(console.error);
+                        await member.roles.remove(ALLIED_REPS_ROLE_ID).catch(console.error);
                     }
                 }
 
                 const newTheirRepIds = [];
                 if (theirRep1) {
                     if (alliance.repRoleId) await theirRep1.roles.add(alliance.repRoleId).catch(console.error);
-                    await theirRep1.roles.add('1417866883750957188').catch(console.error);
+                    await theirRep1.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
                     newTheirRepIds.push(theirRep1.id);
                 }
                 if (theirRep2) {
                     if (alliance.repRoleId) await theirRep2.roles.add(alliance.repRoleId).catch(console.error);
-                    await theirRep2.roles.add('1417866883750957188').catch(console.error);
+                    await theirRep2.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
                     newTheirRepIds.push(theirRep2.id);
                 }
 
@@ -168,7 +177,28 @@ Please meet your Kavi Café representatives:
             await saveAlliance(alliance);
             await refreshAllianceList(client);
 
-            await interaction.editReply(`✅ Alliance **${groupName}** successfully updated!`);
+            // ── Ask to kick removed reps ──
+            if (removedTheirRepIds.length > 0) {
+                const removedMentions = removedTheirRepIds.map(id => `<@${id}>`).join(', ');
+
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`edit_kick_yes_${groupName.replace(/\s+/g, '_')}_${removedTheirRepIds.join('-')}`)
+                        .setLabel('✅ Yes, Kick Them')
+                        .setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder()
+                        .setCustomId(`edit_kick_no_${interaction.user.id}`)
+                        .setLabel('❌ No, Keep Them')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+                await interaction.editReply({
+                    content: `✅ Alliance **${groupName}** successfully updated!\n\nThe following reps have been removed and their roles stripped: ${removedMentions}\n\nWould you like to kick them from the server as well?`,
+                    components: [row]
+                });
+            } else {
+                await interaction.editReply(`✅ Alliance **${groupName}** successfully updated!`);
+            }
 
         } catch (err) {
             console.error('Error executing alliance-edit:', err);
