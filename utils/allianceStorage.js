@@ -5,7 +5,12 @@ async function loadAlliances() {
 }
 
 async function saveAlliance(data) {
-    const { _id, __v, ...updateData } = data.toObject ? data.toObject() : data;
+    if (data.save) {
+        // It's a Mongoose document — just save it directly
+        return await data.save();
+    }
+    // It's a plain object — upsert
+    const { _id, __v, ...updateData } = data;
     return await Alliance.findOneAndUpdate(
         { groupName: updateData.groupName },
         { $set: updateData },
