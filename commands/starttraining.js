@@ -87,49 +87,65 @@ const TRAININGS = {
         sections: [
             {
                 title: '📢 Welcome to Intro to Mentorship',
-                content: `Hello there, lyric sucks.`
+                content: `Hello! Congratulations on joining the mentorship program at Kavià Café. This training will walk you through everything you need to know about handling tickets, your responsibilities as a High Rank, and how to best support the team.\n\nPlease read each section carefully and click **Done** when you are ready to move on.`
+            },
+            {
+                title: '🎫 Ticket Categories — Part 1',
+                content: `There are several ticket categories you will encounter. Here is an overview of each:\n\n**General Support** — Visible to all High Ranks. Handles general questions and minor issues.\n\n**Moderation Support** — For moderator requests, rule violations, and role issues.\n\n**Public Relations Support** — For alliances, giveaways, and event winner roles.\n\n**Human Resources Support** — For LR-HR reports, promotions, demotions, and applications.`
+            },
+            {
+                title: '🎫 Ticket Categories — Part 2',
+                content: `**Development** — For development and beta tester applications.\n\n**SHR** — For resignations, presidential staff reports, and critical issues.\n\n**Important Notes:**\n• Department-specific tickets are only visible to assigned staff.\n• Always introduce yourself before assisting in any ticket.\n• Close tickets after **48 hours** of no response.`
+            },
+            {
+                title: '🔀 Incorrect Tickets & Redirecting',
+                content: `Sometimes users will open the wrong ticket type. Here is how to handle each:\n\n• **SHR tickets** → Resignations, Presidential staff reports, Critical issues\n• **PR tickets** → Alliances, giveaways, event winner roles\n• **Mod tickets** → Moderator needed, rule violations, role issues\n• **HR tickets** → LR-HR reports, Promotions, Demotions, Applications\n• **Dev tickets** → Development/Beta tester applications\n• **General tickets** → General questions, minor issues\n\nIf a user opens the wrong ticket, politely redirect them to the correct one.`
+            },
+            {
+                title: '⚠️ Ban Permissions',
+                content: `As a High Rank you will receive the **Ban Handler** role and ban permissions in the Roblox group.\n\n**Important:**\n• Do **not** abuse your ban permissions under any circumstances.\n• Misuse of the ban command will result in **immediate termination**.\n• Only use ban permissions when absolutely necessary and within the guidelines set by leadership.\n\nClick **Done** below to confirm you have read everything and proceed to your final quiz!`
             }
         ],
         questions: [
             {
-                question: 'Placeholder question 1 — to be updated.',
-                options: ['A) Option A', 'B) Option B', 'C) Option C', 'D) Option D'],
+                question: 'A High Rank staff member has joined the Public Relations Department. Which ticket type can they see?',
+                options: ['A) Moderation Support', 'B) Development', 'C) Public Relations + General Support', 'D) SHR + Human Resources Support'],
+                answer: 'c'
+            },
+            {
+                question: 'A user creates a General Support ticket. What inquiries are you able to help with in this ticket type?',
+                options: ['A) Development Inquiries', 'B) General Questions', 'C) Role issues', 'D) Resignations'],
+                answer: 'b'
+            },
+            {
+                question: 'A user opens a General Support ticket to report an LR-HR staff. What is the correct course of action?',
+                options: ['A) Redirect them to a Human Resources ticket', 'B) Abandon the ticket', 'C) Ban the user', 'D) Try to punish the LR-HR being reported'],
                 answer: 'a'
             },
             {
-                question: 'Placeholder question 2 — to be updated.',
-                options: ['A) Option A', 'B) Option B', 'C) Option C', 'D) Option D'],
-                answer: 'a'
+                question: 'What administrative privilege does a High Rank receive?',
+                options: ['A) Pban', 'B) Btools', 'C) Server Shutdown', 'D) Ban'],
+                answer: 'd'
             },
             {
-                question: 'Placeholder question 3 — to be updated.',
-                options: ['A) Option A', 'B) Option B', 'C) Option C', 'D) Option D'],
-                answer: 'a'
+                question: 'What is the consequence of misusing the ban command?',
+                options: ['A) Strike', 'B) Termination', 'C) Demotion', 'D) Pban'],
+                answer: 'b'
             },
             {
-                question: 'Placeholder question 4 — to be updated.',
-                options: ['A) Option A', 'B) Option B', 'C) Option C', 'D) Option D'],
-                answer: 'a'
+                question: 'Which ticket type handles resignations and presidential staff reports?',
+                options: ['A) General Support', 'B) Human Resources Support', 'C) SHR', 'D) Moderation Support'],
+                answer: 'c'
             },
             {
-                question: 'Placeholder question 5 — to be updated.',
-                options: ['A) Option A', 'B) Option B', 'C) Option C', 'D) Option D'],
-                answer: 'a'
+                question: 'How long should you wait before closing a ticket with no response?',
+                options: ['A) 24 hours', 'B) 72 hours', 'C) 1 week', 'D) 48 hours'],
+                answer: 'd'
             },
             {
-                question: 'Placeholder question 6 — to be updated.',
-                options: ['A) Option A', 'B) Option B', 'C) Option C', 'D) Option D'],
-                answer: 'a'
-            },
-            {
-                question: 'Placeholder question 7 — to be updated.',
-                options: ['A) Option A', 'B) Option B', 'C) Option C', 'D) Option D'],
-                answer: 'a'
-            },
-            {
-                question: 'Placeholder question 8 — to be updated.',
-                options: ['A) Option A', 'B) Option B', 'C) Option C', 'D) Option D'],
-                answer: 'a'
+                question: 'A user opens a Moderation Support ticket asking about a demotion. What should you do?',
+                options: ['A) Handle it in the Moderation ticket', 'B) Redirect them to a Human Resources ticket', 'C) Redirect them to General Support', 'D) Close the ticket immediately'],
+                answer: 'b'
             }
         ]
     }
@@ -141,7 +157,7 @@ const helpMessages = new Map();
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('starttraining')
-        .setDescription('Start the PR staff training for a user')
+        .setDescription('Start PR staff training for a user')
         .addStringOption(option =>
             option.setName('training')
                 .setDescription('Select the training session')
@@ -189,17 +205,18 @@ module.exports = {
 
             const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
             if (logChannel) {
-                const logEmbed = new EmbedBuilder()
-                    .setTitle('📚 Training Started')
-                    .setColor('Blue')
-                    .addFields(
-                        { name: 'Trainee', value: `<@${user.id}>`, inline: true },
-                        { name: 'Training', value: training.name, inline: true },
-                        { name: 'Started By', value: interaction.user.tag, inline: true },
-                        { name: 'Date', value: new Date().toLocaleString(), inline: false }
-                    )
-                    .setTimestamp();
-                await logChannel.send({ embeds: [logEmbed] });
+                await logChannel.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('📚 Training Started')
+                        .setColor('Blue')
+                        .addFields(
+                            { name: 'Trainee', value: `<@${user.id}>`, inline: true },
+                            { name: 'Training', value: training.name, inline: true },
+                            { name: 'Started By', value: interaction.user.tag, inline: true },
+                            { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                        )
+                        .setTimestamp()]
+                });
             }
         } catch (err) {
             console.error('Error starting training:', err);
@@ -350,7 +367,8 @@ module.exports = {
                 }, 1000);
             } else {
                 const score = session.quizAnswers.filter(a => a.passed).length;
-                const autoPass = score >= 6;
+                const passMark = training.name === 'Intro to Mentorship' ? 3 : 6;
+                const autoPass = score >= passMark;
 
                 const completionEmbed = new EmbedBuilder()
                     .setTitle('📋 Quiz Submitted!')
@@ -377,21 +395,23 @@ module.exports = {
                             .setStyle(ButtonStyle.Danger)
                     );
 
-                    const logEmbed = new EmbedBuilder()
-                        .setTitle('📋 Training Quiz Results — Awaiting Review')
-                        .setColor(autoPass ? 'Green' : 'Orange')
-                        .addFields(
-                            { name: 'Trainee', value: `<@${userId}>`, inline: true },
-                            { name: 'Training', value: training.name, inline: true },
-                            { name: 'Score', value: `${score}/${training.questions.length}`, inline: true },
-                            { name: 'Auto Result', value: autoPass ? '✅ Likely Pass' : '⚠️ Likely Fail', inline: true },
-                            { name: 'Help Requests During Training', value: `${session.helpCount}`, inline: true },
-                            { name: 'Date', value: new Date().toLocaleString(), inline: true },
-                            { name: 'Question Breakdown', value: breakdown, inline: false }
-                        )
-                        .setTimestamp();
-
-                    await logChannel.send({ embeds: [logEmbed], components: [passFailRow] });
+                    await logChannel.send({
+                        embeds: [new EmbedBuilder()
+                            .setTitle('📋 Training Quiz Results — Awaiting Review')
+                            .setColor(autoPass ? 'Green' : 'Orange')
+                            .addFields(
+                                { name: 'Trainee', value: `<@${userId}>`, inline: true },
+                                { name: 'Training', value: training.name, inline: true },
+                                { name: 'Score', value: `${score}/${training.questions.length}`, inline: true },
+                                { name: 'Pass Mark', value: `${passMark}/${training.questions.length}`, inline: true },
+                                { name: 'Auto Result', value: autoPass ? '✅ Likely Pass' : '⚠️ Likely Fail', inline: true },
+                                { name: 'Help Requests During Training', value: `${session.helpCount}`, inline: true },
+                                { name: 'Date', value: new Date().toLocaleString(), inline: true },
+                                { name: 'Question Breakdown', value: breakdown, inline: false }
+                            )
+                            .setTimestamp()],
+                        components: [passFailRow]
+                    });
                 }
             }
         }
@@ -409,13 +429,14 @@ module.exports = {
 
             try {
                 const user = await client.users.fetch(userId);
-                const passEmbed = new EmbedBuilder()
-                    .setTitle('🎉 Congratulations — You Passed!')
-                    .setDescription(`We are so thrilled to officially welcome you to the **Kavià Café Public Relations Department**! 🎊\n\nYou have successfully completed your training and demonstrated a great understanding of your responsibilities.\n\n**What's next?**\n• You'll be given your official PR role shortly.\n• Head over to the PR server and introduce yourself!\n• Don't hesitate to reach out to PR Leadership if you ever need guidance.\n\nWe're so excited to have you on the team. Welcome aboard! ☕💜`)
-                    .setColor(0x9B59B6)
-                    .setFooter({ text: 'Kavià Café — Public Relations Department' })
-                    .setTimestamp();
-                await user.send({ embeds: [passEmbed] });
+                await user.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('🎉 Congratulations — You Passed!')
+                        .setDescription(`We are so thrilled to officially welcome you to the **Kavià Café Public Relations Department**! 🎊\n\nYou have successfully completed your training and demonstrated a great understanding of your responsibilities.\n\n**What's next?**\n• You'll be given your official PR role shortly.\n• Head over to the PR server and introduce yourself!\n• Don't hesitate to reach out to PR Leadership if you ever need guidance.\n\nWe're so excited to have you on the team. Welcome aboard! ☕💜`)
+                        .setColor(0x9B59B6)
+                        .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                        .setTimestamp()]
+                });
             } catch (err) {
                 console.error('Failed to DM trainee pass result:', err);
             }
@@ -441,13 +462,14 @@ module.exports = {
                 const trainingKey = session?.trainingKey || 'basic_training';
                 const training = TRAININGS[trainingKey];
 
-                const failEmbed = new EmbedBuilder()
-                    .setTitle('📋 Training Result')
-                    .setDescription(`Thank you for completing the training, and don't be discouraged! Unfortunately you did not pass this time, but we believe in you. 💜\n\nA member of PR Leadership will be reaching out to support you before your next attempt.\n\n**Your training will now restart from the beginning.**\n\nTake your time to review each section carefully — you've got this! ☕`)
-                    .setColor(0xE74C3C)
-                    .setFooter({ text: 'Kavià Café — Public Relations Department' })
-                    .setTimestamp();
-                await user.send({ embeds: [failEmbed] });
+                await user.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('📋 Training Result')
+                        .setDescription(`Thank you for completing the training, and don't be discouraged! Unfortunately you did not pass this time, but we believe in you. 💜\n\nA member of PR Leadership will be reaching out to support you before your next attempt.\n\n**Your training will now restart from the beginning.**\n\nTake your time to review each section carefully — you've got this! ☕`)
+                        .setColor(0xE74C3C)
+                        .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                        .setTimestamp()]
+                });
 
                 setTimeout(async () => {
                     activeSessions.set(userId, {
