@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { findAlliance } = require('../utils/allianceStorage');
 
 const APPEAL_LOG_CHANNEL_ID = '1507114345723727945';
@@ -27,7 +27,7 @@ module.exports = {
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
                         .setCustomId('appeal_alliance_name')
-                        .setLabel('Name of the Alliance you are appealing')
+                        .setLabel('Alliance Name')
                         .setStyle(TextInputStyle.Short)
                         .setPlaceholder('e.g. Valeria Isles')
                         .setRequired(true)
@@ -37,7 +37,7 @@ module.exports = {
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
                         .setCustomId('appeal_type')
-                        .setLabel('What are you appealing? (Strike or Termination)')
+                        .setLabel('What are you appealing?')
                         .setStyle(TextInputStyle.Short)
                         .setPlaceholder('Strike or Termination')
                         .setRequired(true)
@@ -46,7 +46,7 @@ module.exports = {
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
                         .setCustomId('appeal_given_by')
-                        .setLabel('Who gave this Alliance the discipline?')
+                        .setLabel('Who gave this discipline?')
                         .setStyle(TextInputStyle.Short)
                         .setPlaceholder('e.g. username#0000')
                         .setRequired(true)
@@ -55,7 +55,7 @@ module.exports = {
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
                         .setCustomId('appeal_reason')
-                        .setLabel('Why should this decision be overturned?')
+                        .setLabel('Why should this be overturned?')
                         .setStyle(TextInputStyle.Paragraph)
                         .setPlaceholder('Please use great detail...')
                         .setRequired(true)
@@ -64,9 +64,9 @@ module.exports = {
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
                         .setCustomId('appeal_evidence')
-                        .setLabel('Evidence (link or "Will DM" or "N/A")')
+                        .setLabel('Evidence (link, "Will DM", or N/A)')
                         .setStyle(TextInputStyle.Short)
-                        .setPlaceholder('Must use a link, "Will DM You The Evidence", or N/A')
+                        .setPlaceholder('Link, "Will DM You The Evidence", or N/A')
                         .setRequired(true)
                         .setMaxLength(500)
                 )
@@ -88,12 +88,11 @@ module.exports = {
                 components: []
             });
 
-            // Notify in alliance channel
             if (appeal?.channelId) {
                 const allianceChannel = await client.channels.fetch(appeal.channelId).catch(() => null);
                 if (allianceChannel) {
                     await allianceChannel.send({
-                        content: appeal.userId ? `<@${appeal.userId}>` : `<@&${STAFF_ROLE_ID}>`,
+                        content: appeal.userId ? `<@${appeal.userId}>` : null,
                         embeds: [new EmbedBuilder()
                             .setTitle('✅ Appeal Approved')
                             .setDescription(
@@ -152,7 +151,7 @@ module.exports = {
                         .setCustomId('moreinfo_message')
                         .setLabel('What information is needed?')
                         .setStyle(TextInputStyle.Paragraph)
-                        .setPlaceholder('Describe what additional information or changes are needed...')
+                        .setPlaceholder('Describe what additional information is needed...')
                         .setRequired(true)
                         .setMaxLength(500)
                 )
@@ -179,16 +178,16 @@ module.exports = {
                         .setCustomId('appeal_reason')
                         .setLabel('Updated reason for appeal')
                         .setStyle(TextInputStyle.Paragraph)
-                        .setPlaceholder('Please update your appeal with the requested information...')
+                        .setPlaceholder('Update your appeal with the requested information...')
                         .setRequired(true)
                         .setMaxLength(1000)
                 ),
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
                         .setCustomId('appeal_evidence')
-                        .setLabel('Updated Evidence (link or "Will DM" or "N/A")')
+                        .setLabel('Updated Evidence')
                         .setStyle(TextInputStyle.Short)
-                        .setPlaceholder('Must use a link, "Will DM You The Evidence", or N/A')
+                        .setPlaceholder('Link, "Will DM You The Evidence", or N/A')
                         .setRequired(true)
                         .setMaxLength(500)
                 )
