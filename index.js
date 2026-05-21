@@ -462,6 +462,13 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    // ── Appeal buttons ──
+    if (interaction.customId.startsWith('appeal_')) {
+        const appeal = require('./commands/appeal');
+        await appeal.handleButton(interaction, client);
+        return;
+    }
+
     // ── Verification Accept ──
     if (interaction.customId.startsWith('verify_accept_')) {
         try {
@@ -841,6 +848,14 @@ client.on('interactionCreate', async (interaction) => {
         if (starttraining) await starttraining.handleModal(interaction, client);
     }
 
+    if (interaction.customId.startsWith('appeal_modal_') ||
+        interaction.customId.startsWith('appeal_deny_modal_') ||
+        interaction.customId.startsWith('appeal_moreinfo_modal_') ||
+        interaction.customId.startsWith('appeal_resubmit_modal_')) {
+        const appeal = require('./commands/appeal');
+        await appeal.handleModal(interaction, client);
+    }
+
     // ── Verification deny modal ──
     if (interaction.customId.startsWith('verify_deny_modal_')) {
         try {
@@ -900,7 +915,6 @@ client.on('messageCreate', async (message) => {
     // ── Verification channel handler ──
     if (message.guild?.id === ALLIANCE_GUILD_ID && message.channel.id === VERIFICATION_CHANNEL_ID) {
         try {
-            // React with hourglass to show it's being processed
             await message.react('⏳').catch(console.error);
 
             const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);

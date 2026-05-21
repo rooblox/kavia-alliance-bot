@@ -3,7 +3,6 @@ const { findAlliance, saveAlliance, deleteAlliance } = require('../utils/allianc
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
 const { DisciplinePending } = require('../db');
 
-const APPEAL_LINK = 'https://forms.gle/h3jUfsMkkzNSdcww8';
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 const TERMINATED_CATEGORY_ID = '1428837884252786819';
 const LOG_CHANNEL_ID = '1462580398935642144';
@@ -148,12 +147,23 @@ module.exports = {
                         repNames.push({ id: repId, name: member ? member.displayName : 'Rep' });
                     }
 
-                    const buttons = repNames.map(rep =>
+                    const understoodButtons = repNames.map(rep =>
                         new ButtonBuilder()
                             .setCustomId(`strike_understood_${rep.id}_${groupName.replace(/\s+/g, '_')}_${action}`)
                             .setLabel(`✅ I Understand — ${rep.name}`)
                             .setStyle(ButtonStyle.Secondary)
-                    ).slice(0, 5);
+                    ).slice(0, 4);
+
+                    const appealButton = new ButtonBuilder()
+                        .setCustomId(`appeal_start_${groupName.replace(/\s+/g, '_')}_${action}`)
+                        .setLabel('📋 Submit an Appeal')
+                        .setStyle(ButtonStyle.Secondary);
+
+                    const rows = [];
+                    if (understoodButtons.length > 0) {
+                        rows.push(new ActionRowBuilder().addComponents(...understoodButtons));
+                    }
+                    rows.push(new ActionRowBuilder().addComponents(appealButton));
 
                     await publicChannel.send({
                         content: `<@&${ALLIED_REPS_ROLE_ID}>`,
@@ -163,14 +173,13 @@ module.exports = {
                                 `<@&${ALLIED_REPS_ROLE_ID}>\n\n` +
                                 `Your alliance has received **${action === 'strike1' ? 'Strike 1' : 'Strike 2'}**.\n\n` +
                                 `**Reason:** ${reason}\n\n` +
-                                `If you believe this is an error or would like to appeal, please use the link below.\n` +
-                                `[Submit an Appeal](${APPEAL_LINK})\n\n` +
+                                `If you believe this is an error or would like to appeal this decision, please click the **Submit an Appeal** button below.\n\n` +
                                 `**Please click your button below to acknowledge this notice.**`
                             )
                             .setColor('Orange')
                             .setFooter({ text: 'Kavià Café — Public Relations Department' })
                             .setTimestamp()],
-                        components: buttons.length > 0 ? [new ActionRowBuilder().addComponents(...buttons)] : [],
+                        components: rows,
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
                 }
@@ -203,7 +212,6 @@ module.exports = {
                     guildId: interaction.guild.id
                 });
 
-                // Save to MongoDB so it survives restarts
                 await DisciplinePending.findOneAndUpdate(
                     { groupName },
                     {
@@ -223,12 +231,23 @@ module.exports = {
                 ).catch(console.error);
 
                 if (publicChannel) {
-                    const buttons = repNames.map(rep =>
+                    const understoodButtons = repNames.map(rep =>
                         new ButtonBuilder()
                             .setCustomId(`discipline_understood_${rep.id}_${groupName.replace(/\s+/g, '_')}_${actionLabel}`)
                             .setLabel(`✅ I Understand — ${rep.name}`)
                             .setStyle(ButtonStyle.Secondary)
-                    ).slice(0, 5);
+                    ).slice(0, 4);
+
+                    const appealButton = new ButtonBuilder()
+                        .setCustomId(`appeal_start_${groupName.replace(/\s+/g, '_')}_${actionLabel}`)
+                        .setLabel('📋 Submit an Appeal')
+                        .setStyle(ButtonStyle.Secondary);
+
+                    const rows = [];
+                    if (understoodButtons.length > 0) {
+                        rows.push(new ActionRowBuilder().addComponents(...understoodButtons));
+                    }
+                    rows.push(new ActionRowBuilder().addComponents(appealButton));
 
                     await publicChannel.send({
                         content: `<@&${ALLIED_REPS_ROLE_ID}>`,
@@ -242,15 +261,14 @@ module.exports = {
                                     ? 'This means your group will no longer be eligible for future alliances with Kavià Café.'
                                     : 'This decision does not reflect any ill intent toward your group. We truly appreciate the time, effort, and partnership we\'ve shared.'
                                 }\n\n` +
-                                `If you would like to appeal this decision, please use the link below.\n` +
-                                `[Submit an Appeal](${APPEAL_LINK})\n\n` +
+                                `If you would like to appeal this decision, please click the **Submit an Appeal** button below.\n\n` +
                                 `**Please click your button below to acknowledge this notice. You will be removed from the server once you do so.**\n` +
                                 `If you do not acknowledge within **24 hours**, you will be automatically removed.`
                             )
                             .setColor(actionColor)
                             .setFooter({ text: 'Kavià Café — Public Relations Department' })
                             .setTimestamp()],
-                        components: buttons.length > 0 ? [new ActionRowBuilder().addComponents(...buttons)] : [],
+                        components: rows,
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
 
@@ -326,7 +344,6 @@ module.exports = {
                             if (ch) await ch.setParent(TERMINATED_CATEGORY_ID, { lockPermissions: false }).catch(console.error);
                         }
 
-                        // Delete from MongoDB
                         await DisciplinePending.findOneAndDelete({ groupName }).catch(console.error);
                         client._disciplinePending.delete(groupName);
 
@@ -351,8 +368,7 @@ module.exports = {
                         { name: '📝 Reason', value: reason },
                         { name: '💬 Notes / Evidence', value: notes },
                         { name: '✅ Decision Approved By', value: approvedBy },
-                        { name: '📌 Follow-Up Action', value: followUp },
-                        { name: '📝 Appeal Link', value: APPEAL_LINK }
+                        { name: '📌 Follow-Up Action', value: followUp }
                     )
                     .setTimestamp();
                 await logChannel.send({ embeds: [logEmbed] });
