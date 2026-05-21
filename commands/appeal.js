@@ -1,8 +1,11 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
-const { findAlliance } = require('../utils/allianceStorage');
+const { findAlliance, saveAlliance } = require('../utils/allianceStorage');
 
 const APPEAL_LOG_CHANNEL_ID = '1507114345723727945';
 const STAFF_ROLE_ID = '1485100238715883720';
+const ALLIED_REPS_ROLE_ID = '1417866883750957188';
+const STRIKE_1_ROLE_ID = '1433165486258127062';
+const STRIKE_2_ROLE_ID = '1433165562531545141';
 
 const activeAppeals = new Map();
 
@@ -80,11 +83,69 @@ module.exports = {
             const appealId = customId.replace('appeal_approve_', '');
             const appeal = activeAppeals.get(appealId);
 
+            const appealType = appeal?.appealType?.toLowerCase() || '';
+            const isStrike = appealType.includes('strike');
+            const isTermination = appealType.includes('termination') || appealType.includes('blacklist');
+
+            let autoActionNote = '';
+
+            // ── Auto remove strike ──
+            if (isStrike && appeal?.allianceName) {
+                try {
+                    const alliance = await findAlliance(appeal.allianceName);
+                    if (alliance) {
+                        const activeStrikes = alliance.strikes.filter(s => !s.removed);
+                        const latestStrike = activeStrikes[activeStrikes.length - 1];
+
+                        if (latestStrike) {
+                            latestStrike.removed = true;
+                            latestStrike.removedBy = `Appeal approved by ${interaction.user.tag}`;
+                            latestStrike.removalReason = 'Appeal approved';
+                            latestStrike.removedOn = new Date().toLocaleString();
+                            alliance.markModified('strikes');
+                            await saveAlliance(alliance);
+
+                            // Remove strike roles from their reps
+                            const guild = await client.guilds.fetch(interaction.guildId).catch(() => null);
+                            if (guild) {
+                                const remainingStrikes = alliance.strikes.filter(s => !s.removed);
+                                const hasStrike1 = remainingStrikes.some(s => s.number === 1);
+                                const hasStrike2 = remainingStrikes.some(s => s.number === 2);
+
+                                for (const repId of alliance.theirRepIds || []) {
+                                    const member = await guild.members.fetch(repId).catch(() => null);
+                                    if (!member) continue;
+                                    if (!hasStrike1) await member.roles.remove(STRIKE_1_ROLE_ID).catch(console.error);
+                                    if (!hasStrike2) await member.roles.remove(STRIKE_2_ROLE_ID).catch(console.error);
+                                }
+                            }
+
+                            autoActionNote = `✅ Strike #${latestStrike.number} has been automatically removed from the alliance record and strike roles updated.`;
+                        } else {
+                            autoActionNote = '⚠️ No active strikes found to remove — please check manually.';
+                        }
+                    } else {
+                        autoActionNote = '⚠️ Alliance not found in database — strike could not be auto-removed.';
+                    }
+                } catch (err) {
+                    console.error('Failed to auto-remove strike on appeal approval:', err);
+                    autoActionNote = '⚠️ Failed to auto-remove strike — please remove it manually using /alliance-discipline.';
+                }
+            }
+
+            // ── Termination reminder ──
+            if (isTermination) {
+                autoActionNote = `⚠️ This was a termination/blacklist appeal. The alliance was removed from the database and their roles/channel were archived. To restore:\n• Re-add the alliance using **/alliance-add**\n• Recreate their roles and channel\n• Re-invite their reps and assign roles`;
+            }
+
             await interaction.update({
                 embeds: [EmbedBuilder.from(interaction.message.embeds[0])
                     .setTitle('📋 Alliance Appeal — ✅ Approved')
                     .setColor('Green')
-                    .addFields({ name: 'Reviewed By', value: interaction.user.tag, inline: true })],
+                    .addFields(
+                        { name: 'Reviewed By', value: interaction.user.tag, inline: true },
+                        { name: '⚠️ Action Required', value: autoActionNote || 'No further action needed.', inline: false }
+                    )],
                 components: []
             });
 
@@ -92,11 +153,11 @@ module.exports = {
                 const allianceChannel = await client.channels.fetch(appeal.channelId).catch(() => null);
                 if (allianceChannel) {
                     await allianceChannel.send({
-                        content: appeal.userId ? `<@${appeal.userId}>` : null,
+                        content: `<@&${ALLIED_REPS_ROLE_ID}>`,
                         embeds: [new EmbedBuilder()
                             .setTitle('✅ Appeal Approved')
                             .setDescription(
-                                `Your appeal for **${appeal.allianceName}** has been **approved** by PR Leadership! 💜\n\n` +
+                                `The appeal submitted for **${appeal.allianceName}** has been **approved** by PR Leadership! 💜\n\n` +
                                 `The discipline against your alliance has been reviewed and overturned. Please reach out to PR Leadership if you have any further questions.`
                             )
                             .setColor('Green')
@@ -106,7 +167,7 @@ module.exports = {
                             )
                             .setFooter({ text: 'Kavià Café — Public Relations Department' })
                             .setTimestamp()],
-                        allowedMentions: { users: appeal.userId ? [appeal.userId] : [] }
+                        allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
                 }
             }
@@ -229,6 +290,25 @@ module.exports = {
                 submittedAt: new Date().toISOString()
             });
 
+            // Post in alliance channel that appeal has been submitted
+            if (alliance?.welcomeChannelId) {
+                const allianceChannel = await client.channels.fetch(alliance.welcomeChannelId).catch(() => null);
+                if (allianceChannel) {
+                    await allianceChannel.send({
+                        embeds: [new EmbedBuilder()
+                            .setTitle('📋 Appeal Submitted')
+                            .setDescription(
+                                `An appeal has been submitted by <@${interaction.user.id}> for **${allianceName}**.\n\n` +
+                                `**Appealing:** ${appealType}\n\n` +
+                                `PR Leadership has been notified and will review the appeal shortly. You will be notified here once a decision has been made. 💜`
+                            )
+                            .setColor(0x9B59B6)
+                            .setFooter({ text: 'Kavià Café — Appeals System' })
+                            .setTimestamp()]
+                    });
+                }
+            }
+
             const appealLogChannel = await client.channels.fetch(APPEAL_LOG_CHANNEL_ID).catch(() => null);
             if (appealLogChannel) {
                 const row = new ActionRowBuilder().addComponents(
@@ -293,11 +373,11 @@ module.exports = {
                 const allianceChannel = await client.channels.fetch(appeal.channelId).catch(() => null);
                 if (allianceChannel) {
                     await allianceChannel.send({
-                        content: appeal.userId ? `<@${appeal.userId}>` : null,
+                        content: `<@&${ALLIED_REPS_ROLE_ID}>`,
                         embeds: [new EmbedBuilder()
                             .setTitle('❌ Appeal Denied')
                             .setDescription(
-                                `Your appeal for **${appeal?.allianceName || 'your alliance'}** has been **denied** by PR Leadership.\n\n` +
+                                `The appeal for **${appeal?.allianceName || 'your alliance'}** has been **denied** by PR Leadership.\n\n` +
                                 `**Reason:** ${reason}\n\n` +
                                 `If you have further questions, please reach out to PR Leadership directly. 💜`
                             )
@@ -308,7 +388,7 @@ module.exports = {
                             )
                             .setFooter({ text: 'Kavià Café — Public Relations Department' })
                             .setTimestamp()],
-                        allowedMentions: { users: appeal?.userId ? [appeal.userId] : [] }
+                        allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
                 }
             }
@@ -344,11 +424,11 @@ module.exports = {
                     );
 
                     await allianceChannel.send({
-                        content: appeal.userId ? `<@${appeal.userId}>` : null,
+                        content: `<@&${ALLIED_REPS_ROLE_ID}>`,
                         embeds: [new EmbedBuilder()
                             .setTitle('📋 More Information Needed for Your Appeal')
                             .setDescription(
-                                `PR Leadership has reviewed your appeal for **${appeal?.allianceName || 'your alliance'}** and requires additional information before a decision can be made.\n\n` +
+                                `PR Leadership has reviewed the appeal for **${appeal?.allianceName || 'your alliance'}** and requires additional information before a decision can be made.\n\n` +
                                 `**What is needed:**\n${infoMessage}\n\n` +
                                 `Please click the button below to resubmit your appeal with the requested information. 💜`
                             )
@@ -359,7 +439,7 @@ module.exports = {
                             .setFooter({ text: 'Kavià Café — Public Relations Department' })
                             .setTimestamp()],
                         components: [resubmitRow],
-                        allowedMentions: { users: appeal?.userId ? [appeal.userId] : [] }
+                        allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
                 }
             }
