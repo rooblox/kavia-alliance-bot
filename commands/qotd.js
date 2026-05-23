@@ -33,7 +33,7 @@ function buildEmbed(schedule) {
             `Welcome to the **Question of the Day** schedule! 🌟\n\n` +
             `**Rules:**\n` +
             `• Every member must claim and complete **at least one day per week**\n` +
-            `• You may claim **multiple days** if you'd like\n` +
+            `• You may claim **multiple days** if you'd like **ask a supervisor before doing so!!**\n` +
             `• Click a day button below to claim it — only you can unclaim your own day\n` +
             `• The schedule resets every **Sunday at 11PM EST**\n\n` +
             `**This Week's Schedule:**\n\n` +
