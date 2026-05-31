@@ -147,15 +147,15 @@ module.exports = {
                         repNames.push({ id: repId, name: member ? member.displayName : 'Rep' });
                     }
 
-                    const understoodButtons = repNames.map(rep =>
+                    const understoodButtons = repNames.slice(0, 4).map(rep =>
                         new ButtonBuilder()
                             .setCustomId(`strike_understood_${rep.id}_${groupName.replace(/\s+/g, '_')}_${action}`)
                             .setLabel(`✅ I Understand — ${rep.name}`)
                             .setStyle(ButtonStyle.Secondary)
-                    ).slice(0, 4);
+                    );
 
                     const appealButton = new ButtonBuilder()
-                        .setCustomId(`appeal_start_${groupName.replace(/\s+/g, '_')}_${action}`)
+                        .setCustomId(`appeal_start_${groupName.replace(/\s+/g, '_')}_${action}_${Date.now()}`)
                         .setLabel('📋 Submit an Appeal')
                         .setStyle(ButtonStyle.Secondary);
 
@@ -231,15 +231,15 @@ module.exports = {
                 ).catch(console.error);
 
                 if (publicChannel) {
-                    const understoodButtons = repNames.map(rep =>
+                    const understoodButtons = repNames.slice(0, 4).map(rep =>
                         new ButtonBuilder()
                             .setCustomId(`discipline_understood_${rep.id}_${groupName.replace(/\s+/g, '_')}_${actionLabel}`)
                             .setLabel(`✅ I Understand — ${rep.name}`)
                             .setStyle(ButtonStyle.Secondary)
-                    ).slice(0, 4);
+                    );
 
                     const appealButton = new ButtonBuilder()
-                        .setCustomId(`appeal_start_${groupName.replace(/\s+/g, '_')}_${actionLabel}`)
+                        .setCustomId(`appeal_start_${groupName.replace(/\s+/g, '_')}_${actionLabel}_${Date.now()}`)
                         .setLabel('📋 Submit an Appeal')
                         .setStyle(ButtonStyle.Secondary);
 

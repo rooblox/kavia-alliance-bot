@@ -160,7 +160,6 @@ module.exports = {
                 }
 
                 try {
-                    // Instructions embed
                     await channel.send({
                         content: `<@&${ALLIED_REPS_ROLE_ID}>`,
                         embeds: [new EmbedBuilder()
@@ -176,8 +175,16 @@ module.exports = {
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
 
-                    // Send as plain text so it's copyable
-                    await channel.send({ content: formattedMessage });
+                    // Split message into chunks if over 2000 chars
+                    const chunks = [];
+                    let remaining = formattedMessage;
+                    while (remaining.length > 0) {
+                        chunks.push(remaining.slice(0, 2000));
+                        remaining = remaining.slice(2000);
+                    }
+                    for (const chunk of chunks) {
+                        await channel.send({ content: chunk });
+                    }
 
                     const key = `${userId}_${alliance.welcomeChannelId}`;
                     activeToposts.set(key, {
@@ -429,8 +436,16 @@ module.exports = {
                 .setStyle(ButtonStyle.Danger)
         );
 
+        // Split preview if over 2000 chars
+        const previewChunks = [];
+        let remaining = previewText;
+        while (remaining.length > 0) {
+            previewChunks.push(remaining.slice(0, 2000));
+            remaining = remaining.slice(2000);
+        }
+
         await interaction.reply({
-            content: previewText,
+            content: previewChunks[0],
             embeds: [new EmbedBuilder()
                 .setTitle('📢 Preview — Confirm Send')
                 .setDescription('This is how your message will look in each alliance channel. Confirm to send to all alliances.')
