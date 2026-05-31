@@ -141,8 +141,12 @@ module.exports = {
                 }
 
                 if (publicChannel) {
+                    // Deduplicate rep IDs
+                    const seenIds = new Set();
                     const repNames = [];
                     for (const repId of theirRepIds) {
+                        if (seenIds.has(repId)) continue;
+                        seenIds.add(repId);
                         const member = await interaction.guild.members.fetch(repId).catch(() => null);
                         repNames.push({ id: repId, name: member ? member.displayName : 'Rep' });
                     }
@@ -154,8 +158,9 @@ module.exports = {
                             .setStyle(ButtonStyle.Secondary)
                     );
 
+                    const appealId = Math.random().toString(36).slice(2, 8);
                     const appealButton = new ButtonBuilder()
-                        .setCustomId(`appeal_start_${groupName.replace(/\s+/g, '_')}_${action}_${Date.now()}`)
+                        .setCustomId(`appeal_start_${groupName.replace(/\s+/g, '_')}_${action}_${appealId}`)
                         .setLabel('📋 Submit an Appeal')
                         .setStyle(ButtonStyle.Secondary);
 
@@ -194,8 +199,12 @@ module.exports = {
                 const theirRepIds = alliance.theirRepIds || [];
                 const pendingKicks = new Set(theirRepIds);
 
+                // Deduplicate rep IDs
+                const seenIds = new Set();
                 const repNames = [];
                 for (const repId of theirRepIds) {
+                    if (seenIds.has(repId)) continue;
+                    seenIds.add(repId);
                     const member = await interaction.guild.members.fetch(repId).catch(() => null);
                     repNames.push({ id: repId, name: member ? member.displayName : 'Rep' });
                 }
@@ -238,8 +247,9 @@ module.exports = {
                             .setStyle(ButtonStyle.Secondary)
                     );
 
+                    const appealId = Math.random().toString(36).slice(2, 8);
                     const appealButton = new ButtonBuilder()
-                        .setCustomId(`appeal_start_${groupName.replace(/\s+/g, '_')}_${actionLabel}_${Date.now()}`)
+                        .setCustomId(`appeal_start_${groupName.replace(/\s+/g, '_')}_${actionLabel}_${appealId}`)
                         .setLabel('📋 Submit an Appeal')
                         .setStyle(ButtonStyle.Secondary);
 
