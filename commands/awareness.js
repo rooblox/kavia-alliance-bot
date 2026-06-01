@@ -1,9 +1,9 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { AwarenessSchedule } = require('../db');
 
-const AWARENESS_CHANNEL_ID = '1498323009453166745';
+const AWARENESS_CHANNEL_ID = '1486792562806227056';
 const APPROVAL_CHANNEL_ID = '1498322220836192336';
-const GUILD_ID = '1385081586285940796';
+const GUILD_ID = '1313780438061420584';
 const STAFF_ROLE_ID = '1485100238715883720';
 
 function getMonthKey() {
@@ -125,7 +125,7 @@ module.exports = {
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
                         .setCustomId('awareness_date')
-                        .setLabel('Date (e.g. April 15)')
+                        .setLabel('Date (e.g. June 15)')
                         .setStyle(TextInputStyle.Short)
                         .setPlaceholder('Enter the date you plan to post')
                         .setRequired(true)
@@ -175,7 +175,6 @@ module.exports = {
             schedule.markModified('entries');
             await schedule.save();
 
-            // Update approval message
             await interaction.update({
                 embeds: [EmbedBuilder.from(interaction.message.embeds[0])
                     .setColor('Green')
@@ -183,10 +182,8 @@ module.exports = {
                 components: []
             });
 
-            // Update schedule embed
             await refreshScheduleEmbed(client, schedule);
 
-            // DM the user
             try {
                 const user = await client.users.fetch(entry.userId);
                 await user.send({
@@ -238,7 +235,6 @@ module.exports = {
 
             await refreshScheduleEmbed(client, schedule);
 
-            // DM the user
             try {
                 const user = await client.users.fetch(entry.userId);
                 await user.send({
@@ -276,7 +272,7 @@ module.exports = {
             await schedule.save();
 
             await interaction.update({ components: [] });
-            await interaction.followUp({ content: '✅ Marked as posted! Great work! 🌟', ephemeral: true });
+            await interaction.followUp({ content: `✅ Marked as posted! Great work! 🌟`, ephemeral: true });
 
             await refreshScheduleEmbed(client, schedule);
         }
@@ -318,7 +314,6 @@ module.exports = {
             schedule.markModified('entries');
             await schedule.save();
 
-            // Send to approval channel
             const approvalChannel = await client.channels.fetch(APPROVAL_CHANNEL_ID).catch(() => null);
             if (approvalChannel) {
                 const row = new ActionRowBuilder().addComponents(
@@ -366,13 +361,45 @@ module.exports = {
 
 async function refreshScheduleEmbed(client, schedule) {
     try {
-        const channel = await client.channels.fetch('1498323009453166745').catch(() => null);
+        const channel = await client.channels.fetch('1486792562806227056').catch(() => null);
         if (!channel || !schedule.messageId) return;
         const msg = await channel.messages.fetch(schedule.messageId).catch(() => null);
         if (!msg) return;
+
+        const entries = schedule.entries || [];
+        const lines = entries.length > 0
+            ? entries.map(e => {
+                if (e.completed) return `✅ **${e.date}** — <@${e.userId}> — ${e.title} *(Posted)*`;
+                if (e.approved) return `🗓️ **${e.date}** — <@${e.userId}> — ${e.title} *(Approved)*`;
+                return `⏳ **${e.date}** — <@${e.userId}> — ${e.title} *(Awaiting Approval)*`;
+            }).join('\n')
+            : '*No awareness posts claimed yet this month. Click the button below to submit yours!*';
+
+        const monthName = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
         await msg.edit({
-            embeds: [buildScheduleEmbed(schedule)],
-            components: [buildScheduleRow()]
+            embeds: [new EmbedBuilder()
+                .setTitle(`📢 Awareness Schedule — ${monthName}`)
+                .setDescription(
+                    `Welcome to this month's **Awareness** schedule! 🌟\n\n` +
+                    `**How it works:**\n` +
+                    `• Each staff member may claim **one awareness post per month**\n` +
+                    `• Click the button below to submit your date, title and what you plan to post\n` +
+                    `• Your submission will be reviewed by PR Leadership before it is approved\n` +
+                    `• On your chosen date, you will be reminded to post in <#1486792562806227056>\n` +
+                    `• Once posted, click the **I've Posted** button in the reminder message\n\n` +
+                    `**This Month's Submissions:**\n\n` +
+                    lines
+                )
+                .setColor(0x9B59B6)
+                .setFooter({ text: `Kavià Café — Awareness Schedule • ${monthName}` })
+                .setTimestamp()],
+            components: [new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('awareness_submit')
+                    .setLabel('📋 Submit Awareness Request')
+                    .setStyle(ButtonStyle.Primary)
+            )]
         });
     } catch (err) {
         console.error('Failed to refresh awareness schedule embed:', err);
