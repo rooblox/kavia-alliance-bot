@@ -4,7 +4,7 @@ const { AwarenessSchedule } = require('../db');
 const AWARENESS_CHANNEL_ID = '1486792562806227056';
 const APPROVAL_CHANNEL_ID = '1510804040173490217';
 const GUILD_ID = '1313780438061420584';
-const STAFF_ROLE_ID = '1485100238715883720';
+const STAFF_ROLE_ID = '1493724127033561108';
 
 function getMonthKey() {
     const now = new Date();
