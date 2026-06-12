@@ -414,6 +414,20 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// Handle autocomplete
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isAutocomplete()) return;
+
+    const command = client.commands.get(interaction.commandName);
+    if (!command?.autocomplete) return;
+
+    try {
+        await command.autocomplete(interaction);
+    } catch (err) {
+        console.error(`Error handling autocomplete for ${interaction.commandName}:`, err);
+    }
+});
+
 // Handle buttons
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;

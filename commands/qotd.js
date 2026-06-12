@@ -35,6 +35,7 @@ function buildEmbed(schedule) {
             `• Every member must claim and complete **at least one day per week**\n` +
             `• You may claim **multiple days** if you'd like **ask a supervisor before doing so!!**\n` +
             `• Click a day button below to claim it — only you can unclaim your own day\n` +
+            `• If you do not post your QOTD by 8-9 PM EST another staff member will have to post it for you. This will count againist you.\n` +
             `• The schedule resets every **Sunday at 11PM EST**\n\n` +
             `**This Week's Schedule:**\n\n` +
             lines.join('\n')

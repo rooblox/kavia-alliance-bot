@@ -37,6 +37,18 @@ const allianceSchema = new mongoose.Schema({
             removedOn: String
         }
     ],
+    notes: [
+        {
+            number: Number,
+            text: String,
+            addedBy: String,
+            addedAt: String,
+            followupDays: { type: Number, default: 0 },
+            removed: { type: Boolean, default: false },
+            removedBy: String,
+            removedAt: String
+        }
+    ],
     addedAt: { type: Date, default: Date.now }
 });
 
