@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { findAlliance, saveAlliance, deleteAlliance } = require('../utils/allianceStorage');
+const { findAlliance, saveAlliance, deleteAlliance, loadAlliances } = require('../utils/allianceStorage');
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
 const { DisciplinePending } = require('../db');
 
@@ -16,7 +16,8 @@ module.exports = {
         .addStringOption(option =>
             option.setName('group_name')
                 .setDescription('Name of the alliance group')
-                .setRequired(true))
+                .setRequired(true)
+                .setAutocomplete(true))
         .addStringOption(option =>
             option.setName('action')
                 .setDescription('Choose the action')
@@ -48,6 +49,16 @@ module.exports = {
         .addStringOption(option =>
             option.setName('follow_up')
                 .setDescription('Follow-up actions')),
+
+    async autocomplete(interaction) {
+        const focusedValue = interaction.options.getFocused().toLowerCase();
+        const alliances = await loadAlliances().catch(() => []);
+        const filtered = alliances
+            .filter(a => a.groupName.toLowerCase().includes(focusedValue))
+            .slice(0, 25)
+            .map(a => ({ name: a.groupName, value: a.groupName }));
+        await interaction.respond(filtered);
+    },
 
     async execute(interaction, client) {
         await interaction.deferReply({ ephemeral: true });
@@ -102,18 +113,19 @@ module.exports = {
                 }
 
                 if (logChannel) {
-                    const removeEmbed = new EmbedBuilder()
-                        .setTitle(`⚠️ Strike Removed from ${groupName}`)
-                        .setColor('Yellow')
-                        .addFields(
-                            { name: '📅 Date Removed', value: strike.removedOn },
-                            { name: '🗑️ Removed By', value: strike.removedBy },
-                            { name: '📝 Removal Reason', value: strike.removalReason },
-                            { name: 'Strike Number', value: `${strike.number}` },
-                            { name: 'Original Reason', value: strike.reason }
-                        )
-                        .setTimestamp();
-                    await logChannel.send({ embeds: [removeEmbed] });
+                    await logChannel.send({
+                        embeds: [new EmbedBuilder()
+                            .setTitle(`⚠️ Strike Removed from ${groupName}`)
+                            .setColor('Yellow')
+                            .addFields(
+                                { name: '📅 Date Removed', value: strike.removedOn },
+                                { name: '🗑️ Removed By', value: strike.removedBy },
+                                { name: '📝 Removal Reason', value: strike.removalReason },
+                                { name: 'Strike Number', value: `${strike.number}` },
+                                { name: 'Original Reason', value: strike.reason }
+                            )
+                            .setTimestamp()]
+                    });
                 }
 
                 return await interaction.editReply(`✅ Strike #${strikeNumber} removed from alliance "${groupName}" and strike roles updated.${noChannelWarning}`);
@@ -141,7 +153,6 @@ module.exports = {
                 }
 
                 if (publicChannel) {
-                    // Deduplicate rep IDs
                     const seenIds = new Set();
                     const repNames = [];
                     for (const repId of theirRepIds) {
@@ -165,9 +176,7 @@ module.exports = {
                         .setStyle(ButtonStyle.Secondary);
 
                     const rows = [];
-                    if (understoodButtons.length > 0) {
-                        rows.push(new ActionRowBuilder().addComponents(...understoodButtons));
-                    }
+                    if (understoodButtons.length > 0) rows.push(new ActionRowBuilder().addComponents(...understoodButtons));
                     rows.push(new ActionRowBuilder().addComponents(appealButton));
 
                     await publicChannel.send({
@@ -199,7 +208,6 @@ module.exports = {
                 const theirRepIds = alliance.theirRepIds || [];
                 const pendingKicks = new Set(theirRepIds);
 
-                // Deduplicate rep IDs
                 const seenIds = new Set();
                 const repNames = [];
                 for (const repId of theirRepIds) {
@@ -254,9 +262,7 @@ module.exports = {
                         .setStyle(ButtonStyle.Secondary);
 
                     const rows = [];
-                    if (understoodButtons.length > 0) {
-                        rows.push(new ActionRowBuilder().addComponents(...understoodButtons));
-                    }
+                    if (understoodButtons.length > 0) rows.push(new ActionRowBuilder().addComponents(...understoodButtons));
                     rows.push(new ActionRowBuilder().addComponents(appealButton));
 
                     await publicChannel.send({
@@ -282,7 +288,6 @@ module.exports = {
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
 
-                    // 24 hour auto-kick
                     setTimeout(async () => {
                         const pendingData = client._disciplinePending?.get(groupName);
                         if (!pendingData) return;
@@ -305,10 +310,7 @@ module.exports = {
                                             `🗒️ **Reason:** ${pendingData.reason}\n\n` +
                                             `We appreciate the time and effort you've contributed during your time as an alliance with **Kavià Café**.\n\n` +
                                             `If you believe this decision was made in error, please feel free to DM me for clarification or open a ticket.\n\n` +
-                                            `**Regards,**\n` +
-                                            `**${pendingData.staffName}**\n` +
-                                            `**${pendingData.rank}**\n` +
-                                            `**Kavià || Public Relations Team**`
+                                            `**Regards,**\n**${pendingData.staffName}**\n**${pendingData.rank}**\n**Kavià || Public Relations Team**`
                                         )
                                         .setColor(actionColor)
                                         .setFooter({ text: 'Kavià Café — Public Relations Department' })
@@ -356,7 +358,6 @@ module.exports = {
 
                         await DisciplinePending.findOneAndDelete({ groupName }).catch(console.error);
                         client._disciplinePending.delete(groupName);
-
                     }, 24 * 60 * 60 * 1000);
                 }
 
@@ -364,24 +365,24 @@ module.exports = {
                 await refreshAllianceList(client);
             }
 
-            // ── Log embed ──
             if (logChannel) {
-                const logEmbed = new EmbedBuilder()
-                    .setTitle('☕ | Kavia Café — Alliance / Termination & Strike Log')
-                    .setColor(action === 'termination' ? 'Red' : action === 'blacklist' ? 0x000000 : 'Orange')
-                    .addFields(
-                        { name: '📅 Date', value: new Date().toLocaleString() },
-                        { name: '🏛️ Alliance Name', value: groupName },
-                        { name: '🔗 Group Link', value: alliance.robloxLink || 'N/A' },
-                        { name: '👤 Logged By', value: interaction.user.tag },
-                        { name: '⚠️ Action Taken', value: action === 'strike1' ? 'Strike 1' : action === 'strike2' ? 'Strike 2' : action === 'blacklist' ? 'Blacklist' : 'Termination' },
-                        { name: '📝 Reason', value: reason },
-                        { name: '💬 Notes / Evidence', value: notes },
-                        { name: '✅ Decision Approved By', value: approvedBy },
-                        { name: '📌 Follow-Up Action', value: followUp }
-                    )
-                    .setTimestamp();
-                await logChannel.send({ embeds: [logEmbed] });
+                await logChannel.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('☕ | Kavia Café — Alliance / Termination & Strike Log')
+                        .setColor(action === 'termination' ? 'Red' : action === 'blacklist' ? 0x000000 : 'Orange')
+                        .addFields(
+                            { name: '📅 Date', value: new Date().toLocaleString() },
+                            { name: '🏛️ Alliance Name', value: groupName },
+                            { name: '🔗 Group Link', value: alliance.robloxLink || 'N/A' },
+                            { name: '👤 Logged By', value: interaction.user.tag },
+                            { name: '⚠️ Action Taken', value: action === 'strike1' ? 'Strike 1' : action === 'strike2' ? 'Strike 2' : action === 'blacklist' ? 'Blacklist' : 'Termination' },
+                            { name: '📝 Reason', value: reason },
+                            { name: '💬 Notes / Evidence', value: notes },
+                            { name: '✅ Decision Approved By', value: approvedBy },
+                            { name: '📌 Follow-Up Action', value: followUp }
+                        )
+                        .setTimestamp()]
+                });
             }
 
             await interaction.editReply(`✅ Action "${action}" successfully applied to alliance "${groupName}".${noChannelWarning}`);

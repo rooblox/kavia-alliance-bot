@@ -13,6 +13,8 @@ const VERIFICATION_CHANNEL_ID = '1417865773271224350';
 const VERIFICATION_LOG_CHANNEL_ID = '1500612010189127891';
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 const ALLIANCE_GUILD_ID = '1385081586285940796';
+const KAVIA_DISCORD = 'https://discord.gg/rMtv4smu36';
+const KAVIA_ROBLOX = 'https://www.roblox.com/communities/13827902/Kavi-Cafe#!/about';
 
 let verificationFormatMessageId = null;
 
@@ -136,7 +138,6 @@ client.once('ready', async () => {
 
     await ensureVerificationFormat(client);
 
-    // ── QOTD + Awareness Scheduler ──
     const qotdCmd = client.commands.get('qotd');
     const awarenessCmd = client.commands.get('awareness');
 
@@ -159,22 +160,16 @@ client.once('ready', async () => {
                     if (!existing) {
                         const reminderChannel = await client.channels.fetch(qotdCmd.REMINDER_CHANNEL_ID).catch(() => null);
                         const logChannel = await client.channels.fetch(qotdCmd.LOG_CHANNEL_ID).catch(() => null);
-
                         const lastSchedule = await QotdSchedule.findOne({}).sort({ createdAt: -1 });
+
                         if (lastSchedule && reminderChannel) {
                             const posted = qotdCmd.DAYS.filter(d => lastSchedule.days[d]?.completed);
                             const notPosted = qotdCmd.DAYS.filter(d => lastSchedule.days[d]?.userId && !lastSchedule.days[d]?.completed);
                             const unclaimed = qotdCmd.DAYS.filter(d => !lastSchedule.days[d]?.userId);
 
-                            const postedLines = posted.length > 0
-                                ? posted.map(d => `✅ **${d}** — <@${lastSchedule.days[d].userId}>`).join('\n')
-                                : 'None';
-                            const notPostedLines = notPosted.length > 0
-                                ? notPosted.map(d => `❌ **${d}** — <@${lastSchedule.days[d].userId}>`).join('\n')
-                                : 'None';
-                            const unclaimedLines = unclaimed.length > 0
-                                ? unclaimed.map(d => `⚪ **${d}**`).join('\n')
-                                : 'None';
+                            const postedLines = posted.length > 0 ? posted.map(d => `✅ **${d}** — <@${lastSchedule.days[d].userId}>`).join('\n') : 'None';
+                            const notPostedLines = notPosted.length > 0 ? notPosted.map(d => `❌ **${d}** — <@${lastSchedule.days[d].userId}>`).join('\n') : 'None';
+                            const unclaimedLines = unclaimed.length > 0 ? unclaimed.map(d => `⚪ **${d}**`).join('\n') : 'None';
 
                             await reminderChannel.send({
                                 content: `<@&${qotdCmd.QOTD_ROLE_ID}>`,
@@ -234,7 +229,6 @@ client.once('ready', async () => {
                                         .setLabel('✅ I\'ve Posted My QOTD!')
                                         .setStyle(ButtonStyle.Success)
                                 );
-
                                 await reminderChannel.send({
                                     content: `<@${entry.userId}>`,
                                     embeds: [new EmbedBuilder()
@@ -250,7 +244,6 @@ client.once('ready', async () => {
                                         .setTimestamp()],
                                     components: [row]
                                 });
-
                                 schedule.days[todayName].reminderSent = true;
                                 schedule.markModified('days');
                                 await schedule.save();
@@ -261,31 +254,24 @@ client.once('ready', async () => {
                     console.error('Failed to send QOTD reminder:', err);
                 }
 
-                // Awareness daily reminder at 9AM EST
+                // Awareness daily reminder
                 try {
                     if (awarenessCmd) {
                         const monthKey = awarenessCmd.getMonthKey();
                         const awarenessSchedule = await AwarenessSchedule.findOne({ monthKey });
                         if (awarenessSchedule) {
-                            const todayString = new Date().toLocaleString('en-US', {
-                                timeZone: 'America/New_York',
-                                month: 'long',
-                                day: 'numeric'
-                            });
-
+                            const todayString = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', month: 'long', day: 'numeric' });
                             const awarenessChannel = await client.channels.fetch(awarenessCmd.AWARENESS_CHANNEL_ID).catch(() => null);
                             if (awarenessChannel) {
                                 for (const entry of awarenessSchedule.entries) {
                                     if (!entry.approved || entry.completed) continue;
-                                    if (entry.date.toLowerCase().includes(todayString.toLowerCase()) ||
-                                        todayString.toLowerCase().includes(entry.date.toLowerCase())) {
+                                    if (entry.date.toLowerCase().includes(todayString.toLowerCase()) || todayString.toLowerCase().includes(entry.date.toLowerCase())) {
                                         const row = new ActionRowBuilder().addComponents(
                                             new ButtonBuilder()
                                                 .setCustomId(`awareness_posted_${entry.entryId}`)
                                                 .setLabel('✅ I\'ve Posted My Awareness!')
                                                 .setStyle(ButtonStyle.Success)
                                         );
-
                                         await awarenessChannel.send({
                                             content: `<@${entry.userId}>`,
                                             embeds: [new EmbedBuilder()
@@ -311,7 +297,7 @@ client.once('ready', async () => {
                 }
             }
 
-            // 9PM EST QOTD follow-up reminder
+            // 9PM EST QOTD follow-up
             if (estHour === 21 && estMin === 0) {
                 try {
                     const weekStart = qotdCmd.getWeekStart();
@@ -327,7 +313,6 @@ client.once('ready', async () => {
                                         .setLabel('✅ I\'ve Posted My QOTD!')
                                         .setStyle(ButtonStyle.Success)
                                 );
-
                                 await reminderChannel.send({
                                     content: `<@${entry.userId}>`,
                                     embeds: [new EmbedBuilder()
@@ -348,6 +333,51 @@ client.once('ready', async () => {
                 } catch (err) {
                     console.error('Failed to send QOTD follow-up reminder:', err);
                 }
+            }
+
+            // ── Missing rep check every 48 hours ──
+            try {
+                const { loadAlliances } = require('./utils/allianceStorage');
+                client._missingRepNotices = client._missingRepNotices || new Map();
+                const now48 = Date.now();
+                const alliances = await loadAlliances();
+
+                for (const alliance of alliances) {
+                    if (!alliance.welcomeChannelId) continue;
+                    const theirRepIds = alliance.theirRepIds || [];
+                    if (theirRepIds.length >= 2) continue;
+
+                    const lastSent = client._missingRepNotices.get(alliance.groupName) || 0;
+                    if (now48 - lastSent < 48 * 60 * 60 * 1000) continue;
+
+                    const allianceChannel = await client.channels.fetch(alliance.welcomeChannelId).catch(() => null);
+                    if (!allianceChannel) continue;
+
+                    await allianceChannel.send({
+                        content: `<@&${ALLIED_REPS_ROLE_ID}>`,
+                        embeds: [new EmbedBuilder()
+                            .setTitle('👥 Missing Representative')
+                            .setDescription(
+                                `Hey there! 👋\n\n` +
+                                `We noticed that **${alliance.groupName}** currently only has **${theirRepIds.length === 0 ? 'no representatives' : '1 representative'}** registered in our Alliance Hub.\n\n` +
+                                `All alliances are required to have **2 representatives** in the hub at all times.\n\n` +
+                                `**What to do:**\n` +
+                                `• Have your second representative join the **Kavià Alliance Hub**\n` +
+                                `• Have them verify in <#${VERIFICATION_CHANNEL_ID}>\n` +
+                                `• A PR staff member will then assign them the correct roles\n\n` +
+                                `If you have any questions or need assistance, please reach out to **PR Leadership**. 💜\n\n` +
+                                `🔗 [Discord Server](${KAVIA_DISCORD}) • [Roblox Group](${KAVIA_ROBLOX})`
+                            )
+                            .setColor('Yellow')
+                            .setFooter({ text: 'Kavià Café — Alliance Hub • This notice sends every 48 hours until resolved' })
+                            .setTimestamp()],
+                        allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
+                    });
+
+                    client._missingRepNotices.set(alliance.groupName, now48);
+                }
+            } catch (err) {
+                console.error('Failed to check missing reps:', err);
             }
 
         } catch (err) {
@@ -476,7 +506,6 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
-    // ── Appeal buttons ──
     if (interaction.customId.startsWith('appeal_')) {
         const appeal = require('./commands/appeal');
         await appeal.handleButton(interaction, client);
@@ -494,9 +523,7 @@ client.on('interactionCreate', async (interaction) => {
             if (!guild) return interaction.reply({ content: '❌ Guild not found.', ephemeral: true });
 
             const member = await guild.members.fetch(userId).catch(() => null);
-            if (!member) {
-                return interaction.reply({ content: '❌ Member not found — they may have left the server.', ephemeral: true });
-            }
+            if (!member) return interaction.reply({ content: '❌ Member not found — they may have left the server.', ephemeral: true });
 
             await member.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
 
@@ -550,7 +577,6 @@ client.on('interactionCreate', async (interaction) => {
                     allowedMentions: { users: [userId] }
                 });
             }
-
         } catch (err) {
             console.error('Error handling verify_accept button:', err);
         }
@@ -637,15 +663,11 @@ client.on('interactionCreate', async (interaction) => {
             const actionLabel = parts[parts.length - 1];
             const groupName = parts.slice(1, -1).join(' ');
 
-            if (interaction.user.id !== userId) {
-                return interaction.reply({ content: '❌ This button is not for you.', ephemeral: true });
-            }
+            if (interaction.user.id !== userId) return interaction.reply({ content: '❌ This button is not for you.', ephemeral: true });
 
             client._strikePending = client._strikePending || new Map();
             const key = `${groupName}_${actionLabel}`;
-            if (!client._strikePending.has(key)) {
-                client._strikePending.set(key, { acknowledged: new Set() });
-            }
+            if (!client._strikePending.has(key)) client._strikePending.set(key, { acknowledged: new Set() });
             client._strikePending.get(key).acknowledged.add(userId);
 
             await StrikePending.findOneAndUpdate(
@@ -682,10 +704,7 @@ client.on('interactionCreate', async (interaction) => {
                         .setStyle(acknowledged ? ButtonStyle.Success : ButtonStyle.Secondary)
                         .setDisabled(acknowledged);
                 });
-
-                await interaction.message.edit({
-                    components: [new ActionRowBuilder().addComponents(...newButtons)]
-                });
+                await interaction.message.edit({ components: [new ActionRowBuilder().addComponents(...newButtons)] });
             } catch (err) {
                 console.error('Failed to update strike message:', err);
             }
@@ -720,20 +739,13 @@ client.on('interactionCreate', async (interaction) => {
             const actionLabel = parts[parts.length - 1];
             const groupName = parts.slice(1, -1).join(' ');
 
-            if (interaction.user.id !== userId) {
-                return interaction.reply({ content: '❌ This button is not for you.', ephemeral: true });
-            }
+            if (interaction.user.id !== userId) return interaction.reply({ content: '❌ This button is not for you.', ephemeral: true });
 
             client._disciplineAcks = client._disciplineAcks || new Map();
-            if (!client._disciplineAcks.has(groupName)) {
-                client._disciplineAcks.set(groupName, new Set());
-            }
+            if (!client._disciplineAcks.has(groupName)) client._disciplineAcks.set(groupName, new Set());
             client._disciplineAcks.get(groupName).add(userId);
 
-            await interaction.reply({
-                content: '✅ Thank you for acknowledging. You will now be removed from the server.',
-                ephemeral: true
-            });
+            await interaction.reply({ content: '✅ Thank you for acknowledging. You will now be removed from the server.', ephemeral: true });
 
             try {
                 const oldComponents = interaction.message.components[0]?.components || [];
@@ -746,10 +758,7 @@ client.on('interactionCreate', async (interaction) => {
                         .setStyle(acknowledged ? ButtonStyle.Success : ButtonStyle.Secondary)
                         .setDisabled(acknowledged);
                 });
-
-                await interaction.message.edit({
-                    components: [new ActionRowBuilder().addComponents(...newButtons)]
-                });
+                await interaction.message.edit({ components: [new ActionRowBuilder().addComponents(...newButtons)] });
             } catch (err) {
                 console.error('Failed to update discipline message:', err);
             }
@@ -780,10 +789,7 @@ client.on('interactionCreate', async (interaction) => {
                             `🗒️ **Reason:** ${pendingData?.reason || 'N/A'}\n\n` +
                             `We appreciate the time and effort you've contributed during your time as an alliance with **Kavià Café**.\n\n` +
                             `If you believe this decision was made in error, please feel free to DM me for clarification or open a ticket.\n\n` +
-                            `**Regards,**\n` +
-                            `**${pendingData?.staffName || 'PR Staff'}**\n` +
-                            `**${pendingData?.rank || 'PR Staff'}**\n` +
-                            `**Kavià || Public Relations Team**`
+                            `**Regards,**\n**${pendingData?.staffName || 'PR Staff'}**\n**${pendingData?.rank || 'PR Staff'}**\n**Kavià || Public Relations Team**`
                         )
                         .setColor(actionLabel === 'blacklist' ? 0x000000 : 'Red')
                         .setFooter({ text: 'Kavià Café — Public Relations Department' })
@@ -832,7 +838,6 @@ client.on('interactionCreate', async (interaction) => {
                         .setTimestamp()]
                 });
             }
-
         } catch (err) {
             console.error('Error handling discipline_understood button:', err);
         }
@@ -870,7 +875,11 @@ client.on('interactionCreate', async (interaction) => {
         await appeal.handleModal(interaction, client);
     }
 
-    // ── Verification deny modal ──
+    if (interaction.customId.startsWith('event_request_modal_')) {
+        const eventRequest = client.commands.get('event-request');
+        if (eventRequest) await eventRequest.handleModal(interaction, client);
+    }
+
     if (interaction.customId.startsWith('verify_deny_modal_')) {
         try {
             const withoutPrefix = interaction.customId.replace('verify_deny_modal_', '');
@@ -926,7 +935,6 @@ client.on('interactionCreate', async (interaction) => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // ── Verification channel handler ──
     if (message.guild?.id === ALLIANCE_GUILD_ID && message.channel.id === VERIFICATION_CHANNEL_ID) {
         try {
             await message.react('⏳').catch(console.error);
@@ -960,9 +968,7 @@ client.on('messageCreate', async (message) => {
                 .setTimestamp();
 
             if (imageUrl) embed.setImage(imageUrl);
-            if (contentLinks.length > 0 && !imageUrl) {
-                embed.addFields({ name: 'Links', value: contentLinks.join('\n'), inline: false });
-            }
+            if (contentLinks.length > 0 && !imageUrl) embed.addFields({ name: 'Links', value: contentLinks.join('\n'), inline: false });
 
             await verifyLogChannel.send({
                 content: `<@&${ALLOWED_ROLE_ID}>`,

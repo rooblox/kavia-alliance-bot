@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, ChannelType, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { findAlliance, saveAlliance } = require('../utils/allianceStorage');
+const { findAlliance, saveAlliance, loadAlliances } = require('../utils/allianceStorage');
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
 
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
@@ -11,7 +11,8 @@ module.exports = {
         .addStringOption(option =>
             option.setName('group_name')
                 .setDescription('The alliance group name to edit')
-                .setRequired(true))
+                .setRequired(true)
+                .setAutocomplete(true))
         .addUserOption(option =>
             option.setName('their_rep_1')
                 .setDescription('Update their first rep'))
@@ -43,6 +44,16 @@ module.exports = {
         .addStringOption(option =>
             option.setName('group_name_new')
                 .setDescription('Rename the alliance')),
+
+    async autocomplete(interaction) {
+        const focusedValue = interaction.options.getFocused().toLowerCase();
+        const alliances = await loadAlliances().catch(() => []);
+        const filtered = alliances
+            .filter(a => a.groupName.toLowerCase().includes(focusedValue))
+            .slice(0, 25)
+            .map(a => ({ name: a.groupName, value: a.groupName }));
+        await interaction.respond(filtered);
+    },
 
     async execute(interaction, client) {
         await interaction.deferReply({ ephemeral: true });
@@ -175,19 +186,7 @@ module.exports = {
                 const channel = await client.channels.fetch(alliance.welcomeChannelId).catch(() => null);
                 if (channel) {
                     const ourRepsArray = [ourRep1, ourRep2].filter(Boolean);
-                    const welcomeMessage = `:tada: **Updated Representative Pair! | Kavi Café x ${newGroupName || groupName}** :tada:
-
-We'd like to introduce your updated Kavi Café representative pair!
-
-:busts_in_silhouette: **Your Representative Pair**
-Please meet your Kavi Café representatives:
-
-**• ${ourRepsArray[0] ? `<@${ourRepsArray[0].id}>` : 'TBD'}**
-**• ${ourRepsArray[1] ? `<@${ourRepsArray[1].id}>` : 'TBD'}**
-
-:handshake: We look forward to continuing our strong partnership!
-
-:coffee::sparkles: Thank you for being an amazing alliance — **Kavi Café** appreciates you! :sparkles::coffee:`;
+                    const welcomeMessage = `:tada: **Updated Representative Pair! | Kavi Café x ${newGroupName || groupName}** :tada:\n\nWe'd like to introduce your updated Kavi Café representative pair!\n\n:busts_in_silhouette: **Your Representative Pair**\nPlease meet your Kavi Café representatives:\n\n**• ${ourRepsArray[0] ? `<@${ourRepsArray[0].id}>` : 'TBD'}**\n**• ${ourRepsArray[1] ? `<@${ourRepsArray[1].id}>` : 'TBD'}**\n\n:handshake: We look forward to continuing our strong partnership!\n\n:coffee::sparkles: Thank you for being an amazing alliance — **Kavi Café** appreciates you! :sparkles::coffee:`;
                     await channel.send({ content: welcomeMessage });
                 }
             }
