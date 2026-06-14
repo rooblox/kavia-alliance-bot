@@ -1,6 +1,6 @@
 require('dotenv').config();
 const fs = require('fs');
-const { Client, Collection, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, Collection, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const { connectDB, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule } = require('./db');
 
 const ALLOWED_ROLE_ID = '1485100238715883720';
@@ -17,6 +17,7 @@ const KAVIA_DISCORD = 'https://discord.gg/rMtv4smu36';
 const KAVIA_ROBLOX = 'https://www.roblox.com/communities/13827902/Kavi-Cafe#!/about';
 
 let verificationFormatMessageId = null;
+const pendingVerifications = new Map();
 
 const client = new Client({
     intents: [
@@ -458,6 +459,77 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// Handle select menus
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isStringSelectMenu()) return;
+
+    // ── Alliance verification dropdown ──
+    if (interaction.customId.startsWith('verify_alliance_select_')) {
+        try {
+            const messageId = interaction.customId.replace('verify_alliance_select_', '');
+            const selectedAlliance = interaction.values[0];
+            const pending = pendingVerifications.get(messageId);
+
+            if (!pending) {
+                return interaction.update({ content: '❌ This verification session has expired.', components: [] });
+            }
+
+            pending.selectedAlliance = selectedAlliance;
+
+            await interaction.update({
+                content: `✅ Got it! You've selected **${selectedAlliance}**. Your verification is being reviewed by staff. 💜`,
+                components: []
+            });
+
+            const { loadAlliances } = require('./utils/allianceStorage');
+            const alliances = await loadAlliances().catch(() => []);
+            const alliance = alliances.find(a => a.groupName === selectedAlliance);
+
+            const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
+            if (!verifyLogChannel) return;
+
+            const imageUrl = pending.imageUrl;
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`verify_accept_${pending.userId}_${messageId}`)
+                    .setLabel('✅ Accept')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId(`verify_deny_${pending.userId}_${messageId}`)
+                    .setLabel('❌ Deny')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+            const embed = new EmbedBuilder()
+                .setTitle('📋 New Verification Submission')
+                .setColor(0x9B59B6)
+                .addFields(
+                    { name: 'User', value: `<@${pending.userId}> (${pending.userTag})`, inline: true },
+                    { name: 'Submitted At', value: new Date().toLocaleString(), inline: true },
+                    { name: 'Alliance Selected', value: selectedAlliance, inline: false },
+                    { name: 'Alliance Role', value: alliance?.repRoleId ? `<@&${alliance.repRoleId}>` : 'Not set', inline: true },
+                    { name: 'Alliance Channel', value: alliance?.welcomeChannelId ? `<#${alliance.welcomeChannelId}>` : 'Not set', inline: true },
+                    { name: 'Message Content', value: pending.content || '*No text*', inline: false }
+                )
+                .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
+                .setTimestamp();
+
+            if (imageUrl) embed.setImage(imageUrl);
+
+            await verifyLogChannel.send({
+                content: `<@&${ALLOWED_ROLE_ID}>`,
+                embeds: [embed],
+                components: [row],
+                allowedMentions: { roles: [ALLOWED_ROLE_ID] }
+            });
+
+        } catch (err) {
+            console.error('Error handling alliance verify select:', err);
+        }
+        return;
+    }
+});
+
 // Handle buttons
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
@@ -512,6 +584,14 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    if (interaction.customId.startsWith('event_attend_') ||
+        interaction.customId.startsWith('event_decline_') ||
+        interaction.customId.startsWith('event_reschedule_')) {
+        const eventRequest = client.commands.get('event-request');
+        if (eventRequest) await eventRequest.handleButton(interaction, client);
+        return;
+    }
+
     // ── Verification Accept ──
     if (interaction.customId.startsWith('verify_accept_')) {
         try {
@@ -525,7 +605,20 @@ client.on('interactionCreate', async (interaction) => {
             const member = await guild.members.fetch(userId).catch(() => null);
             if (!member) return interaction.reply({ content: '❌ Member not found — they may have left the server.', ephemeral: true });
 
+            // Give Allied Reps role
             await member.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
+
+            // Auto-assign alliance rep role if we have the pending verification data
+            const pending = pendingVerifications.get(messageId);
+            if (pending?.selectedAlliance) {
+                const { loadAlliances } = require('./utils/allianceStorage');
+                const alliances = await loadAlliances().catch(() => []);
+                const alliance = alliances.find(a => a.groupName === pending.selectedAlliance);
+                if (alliance?.repRoleId) {
+                    await member.roles.add(alliance.repRoleId).catch(console.error);
+                }
+                pendingVerifications.delete(messageId);
+            }
 
             if (messageId) {
                 const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
@@ -568,8 +661,8 @@ client.on('interactionCreate', async (interaction) => {
                     embeds: [new EmbedBuilder()
                         .setTitle('📋 Alliance Update Reminder')
                         .setDescription(
-                            `<@${interaction.user.id}> don't forget to update the alliance record for <@${userId}> using **/alliance-edit**!\n\n` +
-                            `Make sure to set their rep in the correct alliance so they receive the proper role and access going forward. 💜`
+                            `<@${interaction.user.id}> don't forget to update the alliance record for <@${userId}> using **/alliance-edit** if needed!\n\n` +
+                            `The alliance rep role has been automatically assigned based on their selection. 💜`
                         )
                         .setColor('Yellow')
                         .setFooter({ text: 'Kavià Café — PR Leadership Reminder' })
@@ -577,6 +670,7 @@ client.on('interactionCreate', async (interaction) => {
                     allowedMentions: { users: [userId] }
                 });
             }
+
         } catch (err) {
             console.error('Error handling verify_accept button:', err);
         }
@@ -875,7 +969,8 @@ client.on('interactionCreate', async (interaction) => {
         await appeal.handleModal(interaction, client);
     }
 
-    if (interaction.customId.startsWith('event_request_modal_')) {
+    if (interaction.customId.startsWith('event_request_modal_') ||
+        interaction.customId.startsWith('event_reschedule_modal_')) {
         const eventRequest = client.commands.get('event-request');
         if (eventRequest) await eventRequest.handleModal(interaction, client);
     }
@@ -907,6 +1002,8 @@ client.on('interactionCreate', async (interaction) => {
                 }
             }
 
+            pendingVerifications.delete(messageId);
+
             try {
                 const user = await client.users.fetch(userId);
                 await user.send({
@@ -935,47 +1032,81 @@ client.on('interactionCreate', async (interaction) => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
+    // ── Verification channel handler ──
     if (message.guild?.id === ALLIANCE_GUILD_ID && message.channel.id === VERIFICATION_CHANNEL_ID) {
         try {
             await message.react('⏳').catch(console.error);
 
-            const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
-            if (!verifyLogChannel) return;
+            const { loadAlliances } = require('./utils/allianceStorage');
+            const alliances = await loadAlliances().catch(() => []);
 
-            const imageUrl = message.attachments.first()?.url || null;
-            const contentLinks = message.content.match(/https?:\/\/\S+/g) || [];
+            if (alliances.length === 0) {
+                const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
+                if (!verifyLogChannel) return;
 
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`verify_accept_${message.author.id}_${message.id}`)
-                    .setLabel('✅ Accept')
-                    .setStyle(ButtonStyle.Success),
-                new ButtonBuilder()
-                    .setCustomId(`verify_deny_${message.author.id}_${message.id}`)
-                    .setLabel('❌ Deny')
-                    .setStyle(ButtonStyle.Danger)
-            );
+                const imageUrl = message.attachments.first()?.url || null;
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`verify_accept_${message.author.id}_${message.id}`)
+                        .setLabel('✅ Accept')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId(`verify_deny_${message.author.id}_${message.id}`)
+                        .setLabel('❌ Deny')
+                        .setStyle(ButtonStyle.Danger)
+                );
 
-            const embed = new EmbedBuilder()
-                .setTitle('📋 New Verification Submission')
-                .setColor(0x9B59B6)
-                .addFields(
-                    { name: 'User', value: `<@${message.author.id}> (${message.author.tag})`, inline: true },
-                    { name: 'Submitted At', value: new Date().toLocaleString(), inline: true },
-                    { name: 'Message Content', value: message.content || '*No text*', inline: false }
-                )
-                .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
-                .setTimestamp();
+                const embed = new EmbedBuilder()
+                    .setTitle('📋 New Verification Submission')
+                    .setColor(0x9B59B6)
+                    .addFields(
+                        { name: 'User', value: `<@${message.author.id}> (${message.author.tag})`, inline: true },
+                        { name: 'Submitted At', value: new Date().toLocaleString(), inline: true },
+                        { name: 'Message Content', value: message.content || '*No text*', inline: false }
+                    )
+                    .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
+                    .setTimestamp();
 
-            if (imageUrl) embed.setImage(imageUrl);
-            if (contentLinks.length > 0 && !imageUrl) embed.addFields({ name: 'Links', value: contentLinks.join('\n'), inline: false });
+                if (imageUrl) embed.setImage(imageUrl);
 
-            await verifyLogChannel.send({
-                content: `<@&${ALLOWED_ROLE_ID}>`,
-                embeds: [embed],
-                components: [row],
-                allowedMentions: { roles: [ALLOWED_ROLE_ID] }
+                await verifyLogChannel.send({
+                    content: `<@&${ALLOWED_ROLE_ID}>`,
+                    embeds: [embed],
+                    components: [row],
+                    allowedMentions: { roles: [ALLOWED_ROLE_ID] }
+                });
+                return;
+            }
+
+            // Store pending verification
+            pendingVerifications.set(message.id, {
+                userId: message.author.id,
+                userTag: message.author.tag,
+                content: message.content,
+                imageUrl: message.attachments.first()?.url || null,
+                selectedAlliance: null,
+                messageId: message.id
             });
+
+            // Build dropdown with alliance options (max 25)
+            const options = alliances.slice(0, 25).map(a => ({
+                label: a.groupName,
+                value: a.groupName
+            }));
+
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId(`verify_alliance_select_${message.id}`)
+                .setPlaceholder('Select the alliance you represent...')
+                .addOptions(options);
+
+            const row = new ActionRowBuilder().addComponents(selectMenu);
+
+            await message.reply({
+                content: `Hey <@${message.author.id}>! 👋 Thanks for submitting your verification.\n\nPlease select which alliance you represent from the dropdown below so we can assign you the correct roles! 💜`,
+                components: [row],
+                ephemeral: false
+            });
+
         } catch (err) {
             console.error('Error handling verification message:', err);
         }
