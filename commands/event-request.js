@@ -128,7 +128,6 @@ module.exports = {
                 staffId: interaction.user.id
             });
 
-            // Parse date for reminders (DD/MM/YYYY)
             let eventDateObj = null;
             try {
                 const [day, month, year] = eventDate.split('/').map(Number);
@@ -179,7 +178,6 @@ module.exports = {
                 allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
             });
 
-            // Log
             const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
             if (logChannel) {
                 await logChannel.send({
@@ -199,7 +197,6 @@ module.exports = {
                 });
             }
 
-            // Schedule reminders
             if (eventDateObj) {
                 const oneDayBefore = new Date(eventDateObj.getTime() - 24 * 60 * 60 * 1000);
                 const twoBefore = new Date(eventDateObj.getTime() - 2 * 60 * 60 * 1000);
@@ -272,6 +269,30 @@ module.exports = {
 
             await interaction.deferReply({ ephemeral: true });
 
+            // Generate a new event ID for the rescheduled version so buttons still work
+            const rescheduleId = `${interaction.user.id}_${Date.now()}`;
+            activeEventRequests.set(rescheduleId, {
+                ...(eventRequest || {}),
+                eventId: rescheduleId,
+                eventDate: newDate,
+                eventTime: newTime
+            });
+
+            const responseRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`event_attend_${rescheduleId}`)
+                    .setLabel('✅ New Date Works!')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId(`event_decline_${rescheduleId}`)
+                    .setLabel('❌ Still Can\'t Attend')
+                    .setStyle(ButtonStyle.Danger),
+                new ButtonBuilder()
+                    .setCustomId(`event_reschedule_${rescheduleId}`)
+                    .setLabel('📅 Suggest Another Date')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
             const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
             if (logChannel) {
                 await logChannel.send({
@@ -281,17 +302,18 @@ module.exports = {
                         .setColor('Yellow')
                         .addFields(
                             { name: 'Alliance', value: eventRequest?.allianceName || 'Unknown', inline: true },
-                            { name: 'Requested By', value: `<@${interaction.user.id}>`, inline: true },
+                            { name: 'Requested By', value: `<@${interaction.user.id}> (${interaction.user.tag})`, inline: true },
                             { name: 'Original Date', value: eventRequest?.eventDate || 'Unknown', inline: true },
                             { name: 'Original Time', value: eventRequest?.eventTime || 'Unknown', inline: true },
                             { name: 'Requested New Date', value: newDate, inline: true },
                             { name: 'Requested New Time', value: newTime, inline: true },
                             { name: 'Reason', value: rescheduleReason, inline: false },
                             { name: 'Event Type', value: eventRequest?.eventType || 'Unknown', inline: true },
-                            { name: 'Channel', value: eventRequest?.channelId ? `<#${eventRequest.channelId}>` : 'Unknown', inline: true }
+                            { name: 'Alliance Channel', value: eventRequest?.channelId ? `<#${eventRequest.channelId}>` : 'Unknown', inline: true }
                         )
-                        .setFooter({ text: 'Kavià Café — Event Reschedule Request' })
+                        .setFooter({ text: 'Use the buttons below to respond to this reschedule request' })
                         .setTimestamp()],
+                    components: [responseRow],
                     allowedMentions: { roles: [STAFF_ROLE_ID] }
                 });
             }
@@ -310,11 +332,35 @@ module.exports = {
 
             await interaction.update({
                 embeds: [EmbedBuilder.from(interaction.message.embeds[0])
-                    .setTitle(`🎉 Kavià Café x ${eventRequest?.allianceName || 'Alliance'} — Event Request`)
                     .setColor('Green')
-                    .setFooter({ text: `✅ Confirmed attendance by ${interaction.user.tag}` })],
+                    .setFooter({ text: `✅ Confirmed by ${interaction.user.tag}` })],
                 components: []
             });
+
+            // Post confirmation in alliance channel
+            if (eventRequest?.channelId) {
+                const allianceChannel = await client.channels.fetch(eventRequest.channelId).catch(() => null);
+                if (allianceChannel) {
+                    await allianceChannel.send({
+                        content: `<@&${ALLIED_REPS_ROLE_ID}>`,
+                        embeds: [new EmbedBuilder()
+                            .setTitle('✅ Event Confirmed!')
+                            .setDescription(
+                                `Great news! 🎉\n\n` +
+                                `PR Leadership has confirmed the event details. We look forward to seeing you there!\n\n` +
+                                `🎮 **Event Type:** ${eventRequest.eventType || 'N/A'}\n` +
+                                `📅 **Date:** ${eventRequest.eventDate || 'N/A'}\n` +
+                                `⏰ **Time:** ${eventRequest.eventTime || 'N/A'}\n` +
+                                `📍 **Location:** Kavià Café\n\n` +
+                                `We can't wait to host you! ☕💜`
+                            )
+                            .setColor('Green')
+                            .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                            .setTimestamp()],
+                        allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
+                    });
+                }
+            }
 
             const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
             if (logChannel) {
@@ -341,11 +387,33 @@ module.exports = {
 
             await interaction.update({
                 embeds: [EmbedBuilder.from(interaction.message.embeds[0])
-                    .setTitle(`🎉 Kavià Café x ${eventRequest?.allianceName || 'Alliance'} — Event Request`)
                     .setColor('Red')
                     .setFooter({ text: `❌ Declined by ${interaction.user.tag}` })],
                 components: []
             });
+
+            // Post decline notice in alliance channel
+            if (eventRequest?.channelId) {
+                const allianceChannel = await client.channels.fetch(eventRequest.channelId).catch(() => null);
+                if (allianceChannel) {
+                    await allianceChannel.send({
+                        content: `<@&${ALLIED_REPS_ROLE_ID}>`,
+                        embeds: [new EmbedBuilder()
+                            .setTitle('❌ Event Declined')
+                            .setDescription(
+                                `Hey! 👋\n\n` +
+                                `Unfortunately we won't be able to move forward with this event at this time. We appreciate you letting us know and hope to find a time that works for both of us in the future! 💜\n\n` +
+                                `🎮 **Event Type:** ${eventRequest?.eventType || 'N/A'}\n` +
+                                `📅 **Original Date:** ${eventRequest?.eventDate || 'N/A'}\n` +
+                                `⏰ **Original Time:** ${eventRequest?.eventTime || 'N/A'}`
+                            )
+                            .setColor('Red')
+                            .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                            .setTimestamp()],
+                        allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
+                    });
+                }
+            }
 
             const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
             if (logChannel) {

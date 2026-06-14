@@ -153,7 +153,6 @@ client.once('ready', async () => {
             const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
             const todayName = dayNames[estDay];
 
-            // Sunday 11PM EST QOTD reset
             if (estDay === 0 && estHour === 23 && estMin === 0) {
                 try {
                     const weekStart = qotdCmd.getWeekStart();
@@ -214,7 +213,6 @@ client.once('ready', async () => {
                 }
             }
 
-            // 9AM EST QOTD daily reminder
             if (estHour === 9 && estMin === 0) {
                 try {
                     const weekStart = qotdCmd.getWeekStart();
@@ -255,7 +253,6 @@ client.once('ready', async () => {
                     console.error('Failed to send QOTD reminder:', err);
                 }
 
-                // Awareness daily reminder
                 try {
                     if (awarenessCmd) {
                         const monthKey = awarenessCmd.getMonthKey();
@@ -298,7 +295,6 @@ client.once('ready', async () => {
                 }
             }
 
-            // 9PM EST QOTD follow-up
             if (estHour === 21 && estMin === 0) {
                 try {
                     const weekStart = qotdCmd.getWeekStart();
@@ -463,7 +459,6 @@ client.on('interactionCreate', async (interaction) => {
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isStringSelectMenu()) return;
 
-    // ── Alliance verification dropdown ──
     if (interaction.customId.startsWith('verify_alliance_select_')) {
         try {
             const messageId = interaction.customId.replace('verify_alliance_select_', '');
@@ -471,13 +466,13 @@ client.on('interactionCreate', async (interaction) => {
             const pending = pendingVerifications.get(messageId);
 
             if (!pending) {
-                return interaction.update({ content: '❌ This verification session has expired.', components: [] });
+                return interaction.update({ content: '❌ This verification session has expired. Please resubmit your verification.', components: [] });
             }
 
             pending.selectedAlliance = selectedAlliance;
 
             await interaction.update({
-                content: `✅ Got it! You've selected **${selectedAlliance}**. Your verification is being reviewed by staff. 💜`,
+                content: `✅ Got it! You've selected **${selectedAlliance}**. Your verification is now being reviewed by staff — you'll be notified via DM once a decision has been made. 💜`,
                 components: []
             });
 
@@ -488,7 +483,6 @@ client.on('interactionCreate', async (interaction) => {
             const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
             if (!verifyLogChannel) return;
 
-            const imageUrl = pending.imageUrl;
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId(`verify_accept_${pending.userId}_${messageId}`)
@@ -507,14 +501,14 @@ client.on('interactionCreate', async (interaction) => {
                     { name: 'User', value: `<@${pending.userId}> (${pending.userTag})`, inline: true },
                     { name: 'Submitted At', value: new Date().toLocaleString(), inline: true },
                     { name: 'Alliance Selected', value: selectedAlliance, inline: false },
-                    { name: 'Alliance Role', value: alliance?.repRoleId ? `<@&${alliance.repRoleId}>` : 'Not set', inline: true },
-                    { name: 'Alliance Channel', value: alliance?.welcomeChannelId ? `<#${alliance.welcomeChannelId}>` : 'Not set', inline: true },
+                    { name: 'Alliance Rep Role', value: alliance?.repRoleId ? `<@&${alliance.repRoleId}>` : '⚠️ Not set', inline: true },
+                    { name: 'Alliance Channel', value: alliance?.welcomeChannelId ? `<#${alliance.welcomeChannelId}>` : '⚠️ Not set', inline: true },
                     { name: 'Message Content', value: pending.content || '*No text*', inline: false }
                 )
-                .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
+                .setFooter({ text: 'Kavià Café — Alliance Hub Verification • Accepting will auto-assign all roles' })
                 .setTimestamp();
 
-            if (imageUrl) embed.setImage(imageUrl);
+            if (pending.imageUrl) embed.setImage(pending.imageUrl);
 
             await verifyLogChannel.send({
                 content: `<@&${ALLOWED_ROLE_ID}>`,
@@ -608,18 +602,58 @@ client.on('interactionCreate', async (interaction) => {
             // Give Allied Reps role
             await member.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
 
-            // Auto-assign alliance rep role if we have the pending verification data
             const pending = pendingVerifications.get(messageId);
+            let allianceName = null;
+            let allianceChannel = null;
+
             if (pending?.selectedAlliance) {
-                const { loadAlliances } = require('./utils/allianceStorage');
-                const alliances = await loadAlliances().catch(() => []);
-                const alliance = alliances.find(a => a.groupName === pending.selectedAlliance);
-                if (alliance?.repRoleId) {
-                    await member.roles.add(alliance.repRoleId).catch(console.error);
+                const { findAlliance, saveAlliance } = require('./utils/allianceStorage');
+                const alliance = await findAlliance(pending.selectedAlliance).catch(() => null);
+
+                if (alliance) {
+                    allianceName = alliance.groupName;
+
+                    // Give alliance rep role
+                    if (alliance.repRoleId) {
+                        await member.roles.add(alliance.repRoleId).catch(console.error);
+                    }
+
+                    // Add to theirRepIds in MongoDB
+                    if (!alliance.theirRepIds.includes(userId)) {
+                        alliance.theirRepIds.push(userId);
+                        alliance.theirReps = alliance.theirRepIds.map(id => `<@${id}>`).join(' ');
+                        alliance.markModified('theirRepIds');
+                        alliance.markModified('theirReps');
+                        await saveAlliance(alliance).catch(console.error);
+                    }
+
+                    // Send welcome message in alliance channel
+                    if (alliance.welcomeChannelId) {
+                        allianceChannel = await client.channels.fetch(alliance.welcomeChannelId).catch(() => null);
+                        if (allianceChannel) {
+                            await allianceChannel.send({
+                                content: `<@&${alliance.repRoleId || ALLIED_REPS_ROLE_ID}>`,
+                                embeds: [new EmbedBuilder()
+                                    .setTitle('🎉 New Representative Verified!')
+                                    .setDescription(
+                                        `Hey everyone! 👋 Please welcome your newest verified representative — <@${userId}>! 🎊\n\n` +
+                                        `<@${userId}> has been verified by PR Leadership and now has full access as an **Allied Representative** for **${allianceName}**.\n\n` +
+                                        `We're so glad to have you here — welcome to the Kavià Alliance Hub! ☕💜`
+                                    )
+                                    .setColor(0x9B59B6)
+                                    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+                                    .setFooter({ text: 'Kavià Café — Alliance Hub' })
+                                    .setTimestamp()],
+                                allowedMentions: { roles: [alliance.repRoleId || ALLIED_REPS_ROLE_ID] }
+                            });
+                        }
+                    }
                 }
+
                 pendingVerifications.delete(messageId);
             }
 
+            // Delete original verification message
             if (messageId) {
                 const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
                 if (verifyChannel) {
@@ -628,6 +662,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
             }
 
+            // Update the log message
             await interaction.update({
                 embeds: [EmbedBuilder.from(interaction.message.embeds[0])
                     .setTitle('✅ Verification — Accepted')
@@ -636,14 +671,19 @@ client.on('interactionCreate', async (interaction) => {
                 components: []
             });
 
+            // DM the user
             try {
                 await member.send({
                     embeds: [new EmbedBuilder()
                         .setTitle('✅ Verification Accepted!')
                         .setDescription(
                             `Hey <@${userId}>! 🎉\n\n` +
-                            `Your verification has been **accepted** and you have been given the **Allied Representative** role in the Kavià Alliance Hub!\n\n` +
-                            `You now have access to your alliance channel. If you have any questions, feel free to reach out to PR Leadership.\n\n` +
+                            `Your verification has been **accepted** by PR Leadership!\n\n` +
+                            `You have been given the following:\n` +
+                            `• ✅ **Allied Representative** role\n` +
+                            `${allianceName ? `• ✅ **${allianceName}** representative role\n` : ''}` +
+                            `${allianceChannel ? `• ✅ Access to <#${allianceChannel.id}>\n` : ''}\n` +
+                            `You now have full access to your alliance channel. If you have any questions, feel free to reach out to PR Leadership.\n\n` +
                             `Welcome to the hub! ☕💜`
                         )
                         .setColor(0x9B59B6)
@@ -652,23 +692,6 @@ client.on('interactionCreate', async (interaction) => {
                 });
             } catch (err) {
                 console.error(`Failed to DM ${userId} on verify accept:`, err);
-            }
-
-            const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
-            if (verifyLogChannel) {
-                await verifyLogChannel.send({
-                    content: `<@${userId}>`,
-                    embeds: [new EmbedBuilder()
-                        .setTitle('📋 Alliance Update Reminder')
-                        .setDescription(
-                            `<@${interaction.user.id}> don't forget to update the alliance record for <@${userId}> using **/alliance-edit** if needed!\n\n` +
-                            `The alliance rep role has been automatically assigned based on their selection. 💜`
-                        )
-                        .setColor('Yellow')
-                        .setFooter({ text: 'Kavià Café — PR Leadership Reminder' })
-                        .setTimestamp()],
-                    allowedMentions: { users: [userId] }
-                });
             }
 
         } catch (err) {
@@ -1032,7 +1055,6 @@ client.on('interactionCreate', async (interaction) => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // ── Verification channel handler ──
     if (message.guild?.id === ALLIANCE_GUILD_ID && message.channel.id === VERIFICATION_CHANNEL_ID) {
         try {
             await message.react('⏳').catch(console.error);
@@ -1040,11 +1062,19 @@ client.on('messageCreate', async (message) => {
             const { loadAlliances } = require('./utils/allianceStorage');
             const alliances = await loadAlliances().catch(() => []);
 
+            pendingVerifications.set(message.id, {
+                userId: message.author.id,
+                userTag: message.author.tag,
+                content: message.content,
+                imageUrl: message.attachments.first()?.url || null,
+                selectedAlliance: null,
+                messageId: message.id
+            });
+
             if (alliances.length === 0) {
                 const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
                 if (!verifyLogChannel) return;
 
-                const imageUrl = message.attachments.first()?.url || null;
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
                         .setCustomId(`verify_accept_${message.author.id}_${message.id}`)
@@ -1067,6 +1097,7 @@ client.on('messageCreate', async (message) => {
                     .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
                     .setTimestamp();
 
+                const imageUrl = message.attachments.first()?.url || null;
                 if (imageUrl) embed.setImage(imageUrl);
 
                 await verifyLogChannel.send({
@@ -1078,17 +1109,6 @@ client.on('messageCreate', async (message) => {
                 return;
             }
 
-            // Store pending verification
-            pendingVerifications.set(message.id, {
-                userId: message.author.id,
-                userTag: message.author.tag,
-                content: message.content,
-                imageUrl: message.attachments.first()?.url || null,
-                selectedAlliance: null,
-                messageId: message.id
-            });
-
-            // Build dropdown with alliance options (max 25)
             const options = alliances.slice(0, 25).map(a => ({
                 label: a.groupName,
                 value: a.groupName
@@ -1102,9 +1122,8 @@ client.on('messageCreate', async (message) => {
             const row = new ActionRowBuilder().addComponents(selectMenu);
 
             await message.reply({
-                content: `Hey <@${message.author.id}>! 👋 Thanks for submitting your verification.\n\nPlease select which alliance you represent from the dropdown below so we can assign you the correct roles! 💜`,
-                components: [row],
-                ephemeral: false
+                content: `Hey <@${message.author.id}>! 👋 Thanks for submitting your verification.\n\nPlease select which alliance you represent from the dropdown below so we can assign you the correct roles automatically! 💜`,
+                components: [row]
             });
 
         } catch (err) {
