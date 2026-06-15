@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { loadAlliances, findAlliance } = require('../utils/allianceStorage');
 
 const LOG_CHANNEL_ID = '1514798629037281390';
@@ -8,6 +8,32 @@ const KAVIA_DISCORD = 'https://discord.gg/rMtv4smu36';
 const KAVIA_ROBLOX = 'https://www.roblox.com/communities/13827902/Kavi-Cafe#!/about';
 
 const activeEventRequests = new Map();
+
+function parseEventDateTime(eventDate, eventTime) {
+    try {
+        const [day, month, year] = eventDate.split('/').map(Number);
+        const timeUpper = eventTime.toUpperCase();
+        const ampm = timeUpper.includes('PM') ? 'PM' : 'AM';
+        const timePart = eventTime.replace(/[APMapm]/g, '').trim();
+        let [hours, minutes] = timePart.split(':').map(Number);
+        if (isNaN(minutes)) minutes = 0;
+        if (ampm === 'PM' && hours !== 12) hours += 12;
+        if (ampm === 'AM' && hours === 12) hours = 0;
+
+        // Determine EST vs EDT offset
+        const testDate = new Date(year, month - 1, day);
+        const tzName = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/New_York',
+            timeZoneName: 'short'
+        }).formatToParts(testDate).find(p => p.type === 'timeZoneName')?.value;
+        const offsetHours = tzName === 'EDT' ? 4 : 5;
+
+        return new Date(Date.UTC(year, month - 1, day, hours + offsetHours, minutes));
+    } catch (err) {
+        console.error('Failed to parse event date/time:', err);
+        return null;
+    }
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -128,13 +154,7 @@ module.exports = {
                 staffId: interaction.user.id
             });
 
-            let eventDateObj = null;
-            try {
-                const [day, month, year] = eventDate.split('/').map(Number);
-                eventDateObj = new Date(year, month - 1, day);
-            } catch (err) {
-                console.error('Failed to parse event date:', err);
-            }
+            const eventDateObj = parseEventDateTime(eventDate, eventTime);
 
             const responseRow = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
@@ -198,9 +218,9 @@ module.exports = {
             }
 
             if (eventDateObj) {
+                const now = new Date();
                 const oneDayBefore = new Date(eventDateObj.getTime() - 24 * 60 * 60 * 1000);
                 const twoBefore = new Date(eventDateObj.getTime() - 2 * 60 * 60 * 1000);
-                const now = new Date();
 
                 if (oneDayBefore > now) {
                     setTimeout(async () => {
@@ -269,7 +289,6 @@ module.exports = {
 
             await interaction.deferReply({ ephemeral: true });
 
-            // Generate a new event ID for the rescheduled version so buttons still work
             const rescheduleId = `${interaction.user.id}_${Date.now()}`;
             activeEventRequests.set(rescheduleId, {
                 ...(eventRequest || {}),
@@ -337,7 +356,6 @@ module.exports = {
                 components: []
             });
 
-            // Post confirmation in alliance channel
             if (eventRequest?.channelId) {
                 const allianceChannel = await client.channels.fetch(eventRequest.channelId).catch(() => null);
                 if (allianceChannel) {
@@ -392,7 +410,6 @@ module.exports = {
                 components: []
             });
 
-            // Post decline notice in alliance channel
             if (eventRequest?.channelId) {
                 const allianceChannel = await client.channels.fetch(eventRequest.channelId).catch(() => null);
                 if (allianceChannel) {
