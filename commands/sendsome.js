@@ -35,9 +35,7 @@ module.exports = {
 
         const alliances = await loadAlliances();
 
-        let targetAlliances = [];
         if (target === 'specific') {
-            // Show dropdown to select alliances
             const options = alliances.slice(0, 25).map(a => ({
                 label: a.groupName,
                 value: a.groupName,
@@ -65,13 +63,27 @@ module.exports = {
                 components: [row],
                 ephemeral: true
             });
-        } else {
-            // Category target — go straight to modal
-            const sessionId = `${interaction.user.id}_${Date.now()}`;
-            targetAlliances = alliances.filter(a => a.section === target);
-            activeSendsome.set(sessionId, { type, selectedAlliances: targetAlliances.map(a => a.groupName), alliances });
 
-            await openSendsomeModal(interaction, type, sessionId);
+        } else {
+            // Category — store session and show compose button
+            const sessionId = `${interaction.user.id}_${Date.now()}`;
+            const targetAlliances = alliances.filter(a => a.section === target);
+            activeSendsome.set(sessionId, {
+                type,
+                selectedAlliances: targetAlliances.map(a => a.groupName),
+                alliances
+            });
+
+            const composeButton = new ButtonBuilder()
+                .setCustomId(`sendsome_compose_${sessionId}`)
+                .setLabel(`✏️ Compose ${type === 'poll' ? 'Poll' : 'Message'}`)
+                .setStyle(ButtonStyle.Primary);
+
+            return interaction.reply({
+                content: `✅ Sending to all **${target}** (${targetAlliances.length} alliance(s)). Click below to compose your ${type}.`,
+                components: [new ActionRowBuilder().addComponents(composeButton)],
+                ephemeral: true
+            });
         }
     },
 
@@ -84,12 +96,155 @@ module.exports = {
 
         session.selectedAlliances = interaction.values;
 
+        // Update the dropdown message then send a button to open the modal
         await interaction.update({
-            content: `✅ Selected **${interaction.values.length}** alliance(s). Opening the ${session.type} form now...`,
-            components: []
+            content: `✅ Selected **${interaction.values.length}** alliance(s). Click below to compose your ${session.type}.`,
+            components: [new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`sendsome_compose_${sessionId}`)
+                    .setLabel(`✏️ Compose ${session.type === 'poll' ? 'Poll' : 'Message'}`)
+                    .setStyle(ButtonStyle.Primary)
+            )]
         });
+    },
 
-        await openSendsomeModal(interaction, session.type, sessionId);
+    async handleButton(interaction, client) {
+        const customId = interaction.customId;
+
+        // ── Compose button — opens modal ──
+        if (customId.startsWith('sendsome_compose_')) {
+            const sessionId = customId.replace('sendsome_compose_', '');
+            const session = activeSendsome.get(sessionId);
+            if (!session) return interaction.reply({ content: '❌ Session expired. Please run /sendsome again.', ephemeral: true });
+
+            if (session.type === 'message') {
+                const modal = new ModalBuilder()
+                    .setCustomId(`sendsome_message_modal_${sessionId}`)
+                    .setTitle('Send Message to Selected Alliances');
+
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('sendsome_title')
+                            .setLabel('Title')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. Important Announcement')
+                            .setRequired(true)
+                            .setMaxLength(256)
+                    ),
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('sendsome_message')
+                            .setLabel('Message')
+                            .setStyle(TextInputStyle.Paragraph)
+                            .setPlaceholder('Type your message here...')
+                            .setRequired(true)
+                            .setMaxLength(4000)
+                    ),
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('sendsome_footer')
+                            .setLabel('Footer / Signature (optional)')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. Signed, Connor | PR Leadership')
+                            .setRequired(false)
+                            .setMaxLength(256)
+                    )
+                );
+
+                await interaction.showModal(modal);
+
+            } else if (session.type === 'poll') {
+                const modal = new ModalBuilder()
+                    .setCustomId(`sendsome_poll_modal_${sessionId}`)
+                    .setTitle('Send Poll to Selected Alliances');
+
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('poll_question')
+                            .setLabel('Poll Question')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. What day works best for an event?')
+                            .setRequired(true)
+                            .setMaxLength(256)
+                    ),
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('poll_option_1')
+                            .setLabel('Option 1')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. Friday')
+                            .setRequired(true)
+                            .setMaxLength(80)
+                    ),
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('poll_option_2')
+                            .setLabel('Option 2')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. Saturday')
+                            .setRequired(true)
+                            .setMaxLength(80)
+                    ),
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('poll_option_3')
+                            .setLabel('Option 3 (optional — leave blank to skip)')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. Sunday')
+                            .setRequired(false)
+                            .setMaxLength(80)
+                    ),
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('poll_option_4')
+                            .setLabel('Option 4 (optional — leave blank to skip)')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. No preference')
+                            .setRequired(false)
+                            .setMaxLength(80)
+                    )
+                );
+
+                await interaction.showModal(modal);
+            }
+            return;
+        }
+
+        // ── Poll vote button ──
+        if (customId.startsWith('sendsome_poll_vote_')) {
+            const parts = customId.replace('sendsome_poll_vote_', '').split('_');
+            const optionIndex = parseInt(parts[parts.length - 1]);
+            const embed = interaction.message.embeds[0];
+            const options = embed.description
+                .split('\n\n')
+                .filter(l => l.match(/^[1-4]️⃣/))
+                .map(l => l.replace(/^[1-4]️⃣ \*\*/, '').replace(/\*\*$/, ''));
+
+            const selectedOption = options[optionIndex] || 'Unknown';
+
+            await interaction.reply({
+                content: `✅ Your vote for **${selectedOption}** has been recorded! Thank you for participating. 💜`,
+                ephemeral: true
+            });
+
+            const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+            if (logChannel) {
+                await logChannel.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('📊 Poll Vote Received')
+                        .setColor(0x9B59B6)
+                        .addFields(
+                            { name: 'Voted By', value: `<@${interaction.user.id}> (${interaction.user.tag})`, inline: true },
+                            { name: 'Channel', value: `<#${interaction.channel.id}>`, inline: true },
+                            { name: 'Selected Option', value: selectedOption, inline: false },
+                            { name: 'Poll Question', value: embed.title?.replace('📊 ', '') || 'Unknown', inline: false }
+                        )
+                        .setTimestamp()]
+                });
+            }
+        }
     },
 
     async handleModal(interaction, client) {
@@ -242,139 +397,5 @@ module.exports = {
             activeSendsome.delete(sessionId);
             await interaction.editReply(`✅ Poll sent to **${sent}** alliance(s)${failed > 0 ? `\n⚠️ Failed for: ${failedAlliances.join(', ')}` : ''}`);
         }
-    },
-
-    async handleButton(interaction, client) {
-        if (!interaction.customId.startsWith('sendsome_poll_vote_')) return;
-
-        const parts = interaction.customId.replace('sendsome_poll_vote_', '').split('_');
-        const optionIndex = parseInt(parts[parts.length - 1]);
-        const embed = interaction.message.embeds[0];
-        const options = embed.description
-            .split('\n\n')
-            .filter(l => l.match(/^[1-4]️⃣/))
-            .map(l => l.replace(/^[1-4]️⃣ \*\*/, '').replace(/\*\*$/, ''));
-
-        const selectedOption = options[optionIndex] || 'Unknown';
-
-        await interaction.reply({
-            content: `✅ Your vote for **${selectedOption}** has been recorded! Thank you for participating. 💜`,
-            ephemeral: true
-        });
-
-        const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
-        if (logChannel) {
-            await logChannel.send({
-                embeds: [new EmbedBuilder()
-                    .setTitle('📊 Poll Vote Received')
-                    .setColor(0x9B59B6)
-                    .addFields(
-                        { name: 'Voted By', value: `<@${interaction.user.id}> (${interaction.user.tag})`, inline: true },
-                        { name: 'Channel', value: `<#${interaction.channel.id}>`, inline: true },
-                        { name: 'Selected Option', value: selectedOption, inline: false },
-                        { name: 'Poll Question', value: embed.title?.replace('📊 ', '') || 'Unknown', inline: false }
-                    )
-                    .setTimestamp()]
-            });
-        }
     }
 };
-
-async function openSendsomeModal(interaction, type, sessionId) {
-    if (type === 'message') {
-        const modal = new ModalBuilder()
-            .setCustomId(`sendsome_message_modal_${sessionId}`)
-            .setTitle('Send Message to Selected Alliances');
-
-        modal.addComponents(
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('sendsome_title')
-                    .setLabel('Title')
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder('e.g. Important Announcement')
-                    .setRequired(true)
-                    .setMaxLength(256)
-            ),
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('sendsome_message')
-                    .setLabel('Message')
-                    .setStyle(TextInputStyle.Paragraph)
-                    .setPlaceholder('Type your message here...')
-                    .setRequired(true)
-                    .setMaxLength(4000)
-            ),
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('sendsome_footer')
-                    .setLabel('Footer / Signature (optional)')
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder('e.g. Signed, Connor | PR Leadership')
-                    .setRequired(false)
-                    .setMaxLength(256)
-            )
-        );
-
-        await interaction.followUp({ content: '📝 Fill out your message below!', ephemeral: true }).catch(() => {});
-        await interaction.showModal(modal).catch(async () => {
-            // If followUp was already sent, try showing modal directly
-            try { await interaction.showModal(modal); } catch (e) { console.error('Modal show error:', e); }
-        });
-
-    } else if (type === 'poll') {
-        const modal = new ModalBuilder()
-            .setCustomId(`sendsome_poll_modal_${sessionId}`)
-            .setTitle('Send Poll to Selected Alliances');
-
-        modal.addComponents(
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('poll_question')
-                    .setLabel('Poll Question')
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder('e.g. What day works best for an event?')
-                    .setRequired(true)
-                    .setMaxLength(256)
-            ),
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('poll_option_1')
-                    .setLabel('Option 1')
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder('e.g. Friday')
-                    .setRequired(true)
-                    .setMaxLength(80)
-            ),
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('poll_option_2')
-                    .setLabel('Option 2')
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder('e.g. Saturday')
-                    .setRequired(true)
-                    .setMaxLength(80)
-            ),
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('poll_option_3')
-                    .setLabel('Option 3 (optional — leave blank to skip)')
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder('e.g. Sunday')
-                    .setRequired(false)
-                    .setMaxLength(80)
-            ),
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('poll_option_4')
-                    .setLabel('Option 4 (optional — leave blank to skip)')
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder('e.g. No preference')
-                    .setRequired(false)
-                    .setMaxLength(80)
-            )
-        );
-
-        await interaction.showModal(modal);
-    }
-}

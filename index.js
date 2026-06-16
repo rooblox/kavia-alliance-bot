@@ -751,6 +751,11 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    if (interaction.customId.startsWith('sendsome_compose_')) {
+        const sendsome = client.commands.get('sendsome');
+        if (sendsome) await sendsome.handleButton(interaction, client);
+        return;
+    }
     if (interaction.customId.startsWith('sendsome_poll_vote_')) {
         const sendsome = client.commands.get('sendsome');
         if (sendsome) await sendsome.handleButton(interaction, client);
