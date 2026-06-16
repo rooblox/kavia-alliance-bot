@@ -33,7 +33,6 @@ module.exports = {
     async handleButton(interaction, client) {
         const customId = interaction.customId;
 
-        // ── COMPOSE BUTTON — open modal ──
         if (customId.startsWith('topost_compose_')) {
             const userId = customId.replace('topost_compose_', '');
             if (interaction.user.id !== userId) {
@@ -77,7 +76,6 @@ module.exports = {
             await interaction.showModal(modal);
         }
 
-        // ── CONFIRM SEND BUTTON ──
         if (customId.startsWith('topost_send_')) {
             const userId = customId.replace('topost_send_', '');
             if (interaction.user.id !== userId) {
@@ -118,8 +116,10 @@ module.exports = {
                             return;
                         }
                         const t = toposts.get(`${userId}_${a.welcomeChannelId}`);
-                        if (!t || t.confirmed) {
-                            lines.push(t?.confirmed ? `✅ **${a.groupName}** — Confirmed` : `⚠️ **${a.groupName}** — Failed to send`);
+                        if (!t) {
+                            lines.push(`⚠️ **${a.groupName}** — Failed to send`);
+                        } else if (t.confirmed) {
+                            lines.push(`✅ **${a.groupName}** — Confirmed`);
                         } else if (t.responded) {
                             lines.push(`🔵 **${a.groupName}** — Awaiting staff review`);
                         } else if (t.noResponse) {
@@ -175,7 +175,6 @@ module.exports = {
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
 
-                    // Split message into chunks if over 2000 chars
                     const chunks = [];
                     let remaining = formattedMessage;
                     while (remaining.length > 0) {
@@ -193,6 +192,7 @@ module.exports = {
                         responded: false,
                         confirmed: false,
                         noResponse: false,
+                        reminder24Sent: false,
                         startedAt: Date.now(),
                         trackingMessageId: trackingMessage?.id,
                         userId,
@@ -206,73 +206,6 @@ module.exports = {
                             embeds: [buildTrackingEmbed(alliances, activeToposts)]
                         }).catch(() => {});
                     }
-
-                    // 24 hour reminder
-                    setTimeout(async () => {
-                        const t = activeToposts.get(key);
-                        if (!t || t.responded || t.confirmed) return;
-
-                        await channel.send({
-                            content: `<@&${ALLIED_REPS_ROLE_ID}>`,
-                            embeds: [new EmbedBuilder()
-                                .setDescription(
-                                    `⏰ **Friendly Reminder!**\n\n` +
-                                    `You still have a pending post that needs to be shared in your server.\n\n` +
-                                    `You have **24 hours** remaining before the deadline. Please make sure to get this posted as soon as possible.\n\n` +
-                                    `If you need assistance or require an extension, please reach out to **PR Leadership** right away.`
-                                )
-                                .setColor('Yellow')
-                                .setFooter({ text: 'Kavià Café — Public Relations Department' })
-                                .setTimestamp()],
-                            allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
-                        });
-                    }, 24 * 60 * 60 * 1000);
-
-                    // 48 hour deadline
-                    setTimeout(async () => {
-                        const t = activeToposts.get(key);
-                        if (!t || t.responded || t.confirmed) return;
-
-                        t.noResponse = true;
-
-                        if (trackingMessage) {
-                            await trackingMessage.edit({
-                                embeds: [buildTrackingEmbed(alliances, activeToposts)]
-                            }).catch(() => {});
-                        }
-
-                        activeToposts.delete(key);
-
-                        if (logChannel) {
-                            await logChannel.send({
-                                embeds: [new EmbedBuilder()
-                                    .setTitle('⚠️ To Post — No Confirmation')
-                                    .setColor('Red')
-                                    .addFields(
-                                        { name: 'Alliance', value: alliance.groupName, inline: true },
-                                        { name: 'Status', value: '❌ No confirmation within 48 hours', inline: true },
-                                        { name: 'Channel', value: `<#${alliance.welcomeChannelId}>`, inline: true },
-                                        { name: 'Date', value: new Date().toLocaleString(), inline: false }
-                                    )
-                                    .setTimestamp()]
-                            });
-                        }
-
-                        await channel.send({
-                            content: `<@&${ALLIED_REPS_ROLE_ID}>`,
-                            embeds: [new EmbedBuilder()
-                                .setDescription(
-                                    `⚠️ **Deadline Passed**\n\n` +
-                                    `The 48 hour posting deadline has passed without confirmation. PR Leadership has been notified.\n\n` +
-                                    `If you have a valid reason for the delay, please reach out to **PR Leadership** immediately.`
-                                )
-                                .setColor('Red')
-                                .setFooter({ text: 'Kavià Café — Public Relations Department' })
-                                .setTimestamp()],
-                            allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
-                        });
-
-                    }, 48 * 60 * 60 * 1000);
 
                 } catch (err) {
                     console.error(`Failed to send topost to ${alliance.groupName}:`, err);
@@ -312,7 +245,6 @@ module.exports = {
             });
         }
 
-        // ── TOPOST CONFIRM BUTTON ──
         if (customId.startsWith('topost_confirm_')) {
             const channelId = customId.replace('topost_confirm_', '');
 
@@ -389,7 +321,6 @@ module.exports = {
             activeToposts.delete(matchedKey);
         }
 
-        // ── CANCEL BUTTON ──
         if (customId.startsWith('topost_cancel_')) {
             const userId = customId.replace('topost_cancel_', '');
             if (interaction.user.id !== userId) {
@@ -436,7 +367,6 @@ module.exports = {
                 .setStyle(ButtonStyle.Danger)
         );
 
-        // Split preview if over 2000 chars
         const previewChunks = [];
         let remaining = previewText;
         while (remaining.length > 0) {
@@ -518,7 +448,9 @@ module.exports = {
                     .setTimestamp()]
             });
         }
-    }
+    },
+
+    activeToposts
 };
 
 module.exports.activeToposts = activeToposts;

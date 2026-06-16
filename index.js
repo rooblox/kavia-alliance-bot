@@ -377,6 +377,168 @@ client.once('ready', async () => {
                 console.error('Failed to check missing reps:', err);
             }
 
+// ── Checkin + Topost interval-based reminders ──
+            try {
+                const checkinCmd = client.commands.get('checkin');
+                const topostCmd = client.commands.get('topost');
+                const now = Date.now();
+                const HOUR_24 = 24 * 60 * 60 * 1000;
+                const HOUR_48 = 48 * 60 * 60 * 1000;
+
+                // ── Checkin reminders ──
+                if (checkinCmd?.activeCheckins) {
+                    for (const [channelId, c] of checkinCmd.activeCheckins.entries()) {
+                        if (c.responded || c.confirmed || c.noResponse) continue;
+                        const elapsed = now - c.startedAt;
+
+                        if (elapsed >= HOUR_24 && !c.reminder24Sent) {
+                            c.reminder24Sent = true;
+                            try {
+                                const ch = await client.channels.fetch(channelId).catch(() => null);
+                                if (ch) {
+                                    await ch.send({
+                                        content: `<@&${ALLIED_REPS_ROLE_ID}>`,
+                                        embeds: [new EmbedBuilder()
+                                            .setDescription(
+                                                `⏰ **Friendly Reminder!**\n\n` +
+                                                `You still have a pending **alliance check-in** that needs to be completed.\n\n` +
+                                                `You have **24 hours** remaining to respond to the 5 questions. Please make sure to do so as soon as possible!\n\n` +
+                                                `Failure to respond may result in a **strike** against your alliance.`
+                                            )
+                                            .setColor('Yellow')
+                                            .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                                            .setTimestamp()],
+                                        allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
+                                    });
+                                }
+                            } catch (err) {
+                                console.error('Failed to send checkin 24hr reminder:', err);
+                            }
+                        }
+
+                        if (elapsed >= HOUR_48) {
+                            c.noResponse = true;
+                            try {
+                                const ch = await client.channels.fetch(channelId).catch(() => null);
+                                const logCh = await client.channels.fetch('1482430133561196625').catch(() => null);
+
+                                if (ch) {
+                                    await ch.send({
+                                        content: `<@&${ALLIED_REPS_ROLE_ID}>`,
+                                        embeds: [new EmbedBuilder()
+                                            .setDescription(
+                                                `⚠️ **Check-In Deadline Passed**\n\n` +
+                                                `The 48 hour check-in window has passed without a response. PR Leadership has been notified.\n\n` +
+                                                `If you have a valid reason for the delay, please reach out to **PR Leadership** immediately.`
+                                            )
+                                            .setColor('Red')
+                                            .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                                            .setTimestamp()],
+                                        allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
+                                    });
+                                }
+
+                                if (logCh) {
+                                    await logCh.send({
+                                        embeds: [new EmbedBuilder()
+                                            .setTitle('⚠️ Check-In — No Response')
+                                            .setColor('Red')
+                                            .addFields(
+                                                { name: 'Alliance', value: c.groupName, inline: true },
+                                                { name: 'Status', value: '❌ No response within 48 hours', inline: true },
+                                                { name: 'Channel', value: `<#${channelId}>`, inline: true },
+                                                { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                                            )
+                                            .setTimestamp()]
+                                    });
+                                }
+                            } catch (err) {
+                                console.error('Failed to send checkin 48hr deadline:', err);
+                            }
+                            checkinCmd.activeCheckins.delete(channelId);
+                        }
+                    }
+                }
+
+                // ── Topost reminders ──
+                if (topostCmd?.activeToposts) {
+                    for (const [key, t] of topostCmd.activeToposts.entries()) {
+                        if (t.responded || t.confirmed || t.noResponse) continue;
+                        const elapsed = now - t.startedAt;
+
+                        if (elapsed >= HOUR_24 && !t.reminder24Sent) {
+                            t.reminder24Sent = true;
+                            try {
+                                const ch = await client.channels.fetch(t.channelId).catch(() => null);
+                                if (ch) {
+                                    await ch.send({
+                                        content: `<@&${ALLIED_REPS_ROLE_ID}>`,
+                                        embeds: [new EmbedBuilder()
+                                            .setDescription(
+                                                `⏰ **Friendly Reminder!**\n\n` +
+                                                `You still have a pending post that needs to be shared in your server.\n\n` +
+                                                `You have **24 hours** remaining before the deadline. Please make sure to get this posted as soon as possible.\n\n` +
+                                                `If you need assistance or require an extension, please reach out to **PR Leadership** right away.`
+                                            )
+                                            .setColor('Yellow')
+                                            .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                                            .setTimestamp()],
+                                        allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
+                                    });
+                                }
+                            } catch (err) {
+                                console.error('Failed to send topost 24hr reminder:', err);
+                            }
+                        }
+
+                        if (elapsed >= HOUR_48) {
+                            t.noResponse = true;
+                            try {
+                                const ch = await client.channels.fetch(t.channelId).catch(() => null);
+                                const logCh = await client.channels.fetch('1482430133561196625').catch(() => null);
+
+                                if (ch) {
+                                    await ch.send({
+                                        content: `<@&${ALLIED_REPS_ROLE_ID}>`,
+                                        embeds: [new EmbedBuilder()
+                                            .setDescription(
+                                                `⚠️ **Deadline Passed**\n\n` +
+                                                `The 48 hour posting deadline has passed without confirmation. PR Leadership has been notified.\n\n` +
+                                                `If you have a valid reason for the delay, please reach out to **PR Leadership** immediately.`
+                                            )
+                                            .setColor('Red')
+                                            .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                                            .setTimestamp()],
+                                        allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
+                                    });
+                                }
+
+                                if (logCh) {
+                                    await logCh.send({
+                                        embeds: [new EmbedBuilder()
+                                            .setTitle('⚠️ To Post — No Confirmation')
+                                            .setColor('Red')
+                                            .addFields(
+                                                { name: 'Alliance', value: t.groupName, inline: true },
+                                                { name: 'Status', value: '❌ No confirmation within 48 hours', inline: true },
+                                                { name: 'Channel', value: `<#${t.channelId}>`, inline: true },
+                                                { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                                            )
+                                            .setTimestamp()]
+                                    });
+                                }
+                            } catch (err) {
+                                console.error('Failed to send topost 48hr deadline:', err);
+                            }
+                            topostCmd.activeToposts.delete(key);
+                        }
+                    }
+                }
+
+            } catch (err) {
+                console.error('Failed to process checkin/topost reminders:', err);
+            }
+
         } catch (err) {
             console.error('Scheduler error:', err);
         }
@@ -459,6 +621,11 @@ client.on('interactionCreate', async (interaction) => {
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isStringSelectMenu()) return;
 
+if (interaction.customId.startsWith('sendsome_select_')) {
+        const sendsome = client.commands.get('sendsome');
+        if (sendsome) await sendsome.handleSelectMenu(interaction, client);
+        return;
+    }
     if (interaction.customId.startsWith('verify_alliance_select_')) {
         try {
             const messageId = interaction.customId.replace('verify_alliance_select_', '');
@@ -578,6 +745,17 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    if (interaction.customId.startsWith('sendall_poll_vote_')) {
+        const sendall = client.commands.get('sendall');
+        if (sendall) await sendall.handleButton(interaction, client);
+        return;
+    }
+
+    if (interaction.customId.startsWith('sendsome_poll_vote_')) {
+        const sendsome = client.commands.get('sendsome');
+        if (sendsome) await sendsome.handleButton(interaction, client);
+        return;
+    }
     if (interaction.customId.startsWith('event_attend_') ||
         interaction.customId.startsWith('event_decline_') ||
         interaction.customId.startsWith('event_reschedule_')) {
@@ -992,6 +1170,17 @@ client.on('interactionCreate', async (interaction) => {
         await appeal.handleModal(interaction, client);
     }
 
+    if (interaction.customId.startsWith('sendall_message_modal_') ||
+        interaction.customId.startsWith('sendall_poll_modal_')) {
+        const sendall = client.commands.get('sendall');
+        if (sendall) await sendall.handleModal(interaction, client);
+    }
+
+    if (interaction.customId.startsWith('sendsome_message_modal_') ||
+        interaction.customId.startsWith('sendsome_poll_modal_')) {
+        const sendsome = client.commands.get('sendsome');
+        if (sendsome) await sendsome.handleModal(interaction, client);
+    }
     if (interaction.customId.startsWith('event_request_modal_') ||
         interaction.customId.startsWith('event_reschedule_modal_')) {
         const eventRequest = client.commands.get('event-request');

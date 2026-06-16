@@ -108,9 +108,11 @@ module.exports = {
 
                     activeCheckins.set(alliance.welcomeChannelId, {
                         groupName: alliance.groupName,
+                        channelId: alliance.welcomeChannelId,
                         responded: false,
                         confirmed: false,
                         noResponse: false,
+                        reminder24Sent: false,
                         messageId: checkinMessage.id,
                         startedAt: Date.now(),
                         trackingMessageId: trackingMessage?.id,
@@ -124,57 +126,6 @@ module.exports = {
                             embeds: [buildTrackingEmbed(alliances, activeCheckins)]
                         }).catch(() => {});
                     }
-
-                    // 24 hour reminder
-                    setTimeout(async () => {
-                        const checkin = activeCheckins.get(alliance.welcomeChannelId);
-                        if (!checkin || checkin.responded || checkin.confirmed) return;
-
-                        await channel.send({
-                            content: `<@&${ALLIED_REPS_ROLE_ID}>`,
-                            embeds: [new EmbedBuilder()
-                                .setDescription(`⏰ <@&${ALLIED_REPS_ROLE_ID}> This is a friendly reminder to complete your alliance check-in! You have **24 hours** remaining to respond to the 5 questions above.`)
-                                .setColor('Yellow')],
-                            allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
-                        });
-                    }, 24 * 60 * 60 * 1000);
-
-                    // 48 hour timeout
-                    setTimeout(async () => {
-                        const checkin = activeCheckins.get(alliance.welcomeChannelId);
-                        if (!checkin || checkin.responded || checkin.confirmed) return;
-
-                        checkin.noResponse = true;
-
-                        if (trackingMessage) {
-                            await trackingMessage.edit({
-                                embeds: [buildTrackingEmbed(alliances, activeCheckins)]
-                            }).catch(() => {});
-                        }
-
-                        activeCheckins.delete(alliance.welcomeChannelId);
-
-                        if (logChannel) {
-                            const noResponseEmbed = new EmbedBuilder()
-                                .setTitle('⚠️ Check-In No Response')
-                                .setColor('Red')
-                                .addFields(
-                                    { name: 'Alliance', value: alliance.groupName, inline: true },
-                                    { name: 'Status', value: '❌ No response within 48 hours', inline: true },
-                                    { name: 'Channel', value: `<#${alliance.welcomeChannelId}>`, inline: true },
-                                    { name: 'Date', value: new Date().toLocaleString(), inline: false }
-                                )
-                                .setTimestamp();
-                            await logChannel.send({ embeds: [noResponseEmbed] });
-                        }
-
-                        await channel.send({
-                            embeds: [new EmbedBuilder()
-                                .setDescription(`⚠️ <@&${ALLIED_REPS_ROLE_ID}> The 48 hour check-in window has passed with no response. PR Leadership has been notified.`)
-                                .setColor('Red')]
-                        });
-
-                    }, 48 * 60 * 60 * 1000);
 
                 } catch (err) {
                     console.error(`Failed to send checkin to ${alliance.groupName}:`, err);
@@ -190,17 +141,18 @@ module.exports = {
             }
 
             if (logChannel) {
-                const logEmbed = new EmbedBuilder()
-                    .setTitle('📋 Alliance Check-In Started')
-                    .setColor(0x9B59B6)
-                    .addFields(
-                        { name: 'Started By', value: interaction.user.tag, inline: true },
-                        { name: 'Sent To', value: `${sent} alliance(s)`, inline: true },
-                        { name: 'Failed', value: failed > 0 ? `${failed} alliance(s)\n${failedAlliances.join('\n')}` : 'None', inline: false },
-                        { name: 'Date', value: new Date().toLocaleString(), inline: false }
-                    )
-                    .setTimestamp();
-                await logChannel.send({ embeds: [logEmbed] });
+                await logChannel.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('📋 Alliance Check-In Started')
+                        .setColor(0x9B59B6)
+                        .addFields(
+                            { name: 'Started By', value: interaction.user.tag, inline: true },
+                            { name: 'Sent To', value: `${sent} alliance(s)`, inline: true },
+                            { name: 'Failed', value: failed > 0 ? `${failed} alliance(s)\n${failedAlliances.join('\n')}` : 'None', inline: false },
+                            { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                        )
+                        .setTimestamp()]
+                });
             }
 
             await interaction.editReply(`✅ Check-in sent to **${sent}** alliance(s)${failed > 0 ? `\n⚠️ Failed for: ${failedAlliances.join(', ')}` : ''}`);
@@ -223,7 +175,6 @@ module.exports = {
             return interaction.reply({ content: '❌ This check-in is no longer active.', ephemeral: true });
         }
 
-        // Only staff role can confirm
         const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
         if (!member || !member.roles.cache.has(STAFF_ROLE_ID)) {
             return interaction.reply({ content: '❌ Only PR Leadership can confirm check-in responses.', ephemeral: true });
@@ -238,7 +189,6 @@ module.exports = {
             components: []
         });
 
-        // Update tracking embed
         if (checkin.trackingMessageId) {
             const checkinLogChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
             if (checkinLogChannel) {
@@ -288,7 +238,6 @@ module.exports = {
         if (message.author.bot) return;
         if (!message.guild) return;
 
-        // Only accept from users with allied reps role
         const member = await message.guild.members.fetch(message.author.id).catch(() => null);
         if (!member) return;
         if (!member.roles.cache.has(ALLIED_REPS_ROLE_ID)) return;
@@ -300,7 +249,6 @@ module.exports = {
 
         await message.react('👀').catch(() => {});
 
-        // Send confirm button in channel pinging staff
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId(`checkin_confirm_${message.channel.id}`)
@@ -325,7 +273,6 @@ module.exports = {
             allowedMentions: { roles: [STAFF_ROLE_ID] }
         });
 
-        // Update tracking to awaiting review
         if (checkin.trackingMessageId) {
             const checkinLogChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
             if (checkinLogChannel) {
@@ -368,23 +315,25 @@ module.exports = {
             }
         }
 
-        // Log to channel
         const logChannel = await client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
         if (logChannel) {
-            const logEmbed = new EmbedBuilder()
-                .setTitle('🔵 Check-In Response — Awaiting Review')
-                .setColor('Blue')
-                .addFields(
-                    { name: 'Alliance', value: checkin.groupName, inline: true },
-                    { name: 'Responded By', value: `${message.author.tag}`, inline: true },
-                    { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
-                    { name: 'Response', value: message.content.slice(0, 1024) || 'No text content', inline: false },
-                    { name: 'Date', value: new Date().toLocaleString(), inline: false }
-                )
-                .setTimestamp();
-            await logChannel.send({ embeds: [logEmbed] });
+            await logChannel.send({
+                embeds: [new EmbedBuilder()
+                    .setTitle('🔵 Check-In Response — Awaiting Review')
+                    .setColor('Blue')
+                    .addFields(
+                        { name: 'Alliance', value: checkin.groupName, inline: true },
+                        { name: 'Responded By', value: `${message.author.tag}`, inline: true },
+                        { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
+                        { name: 'Response', value: message.content.slice(0, 1024) || 'No text content', inline: false },
+                        { name: 'Date', value: new Date().toLocaleString(), inline: false }
+                    )
+                    .setTimestamp()]
+            });
         }
-    }
+    },
+
+    activeCheckins
 };
 
 module.exports.activeCheckins = activeCheckins;
