@@ -102,6 +102,13 @@ async function ensureVerificationFormat(client) {
 
 client.once('ready', async () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
+
+    client.user.setPresence({
+        activities: [{ name: 'over Kavià Café Alliances', type: 3 }],
+        status: 'online'
+    });
+    console.log('✅ Status set to: Watching over Kavià Café Alliances');
+
     await connectDB();
 // Leave any unauthorized guilds
     for (const guild of client.guilds.cache.values()) {
