@@ -756,6 +756,17 @@ client.on('interactionCreate', async (interaction) => {
         if (sendsome) await sendsome.handleButton(interaction, client);
         return;
     }
+    if (interaction.customId.startsWith('sendall_poll_close_')) {
+        const sendall = client.commands.get('sendall');
+        if (sendall) await sendall.handleButton(interaction, client);
+        return;
+    }
+
+    if (interaction.customId.startsWith('sendsome_poll_close_')) {
+        const sendsome = client.commands.get('sendsome');
+        if (sendsome) await sendsome.handleButton(interaction, client);
+        return;
+    }
     if (interaction.customId.startsWith('sendsome_poll_vote_')) {
         const sendsome = client.commands.get('sendsome');
         if (sendsome) await sendsome.handleButton(interaction, client);
