@@ -104,7 +104,7 @@ client.once('ready', async () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
 
     client.user.setPresence({
-        activities: [{ name: 'over Kavià Café Alliances', type: 3 }],
+        activities: [{ name: 'Watching over Kavià Café Alliances', type: 3 }],
         status: 'online'
     });
     console.log('✅ Status set to: Watching over Kavià Café Alliances');
