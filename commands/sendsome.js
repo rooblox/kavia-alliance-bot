@@ -172,12 +172,12 @@ module.exports = {
                             .setRequired(true)
                             .setMaxLength(400)
                     ),
-                    new ActionRowBuilder().addComponents(
+               new ActionRowBuilder().addComponents(
                         new TextInputBuilder()
                             .setCustomId('poll_duration')
-                            .setLabel('Duration (e.g. 1h, 6h, 24h) or "self" to close manually')
+                            .setLabel('Duration (e.g. 24h) or "self"')
                             .setStyle(TextInputStyle.Short)
-                            .setPlaceholder('e.g. 24h or self')
+                            .setPlaceholder('e.g. 1h, 6h, 24h, or self to close manually')
                             .setRequired(true)
                             .setMaxLength(10)
                     )
