@@ -15,6 +15,10 @@ const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 const ALLIANCE_GUILD_ID = '1385081586285940796';
 const KAVIA_DISCORD = 'https://discord.gg/rMtv4smu36';
 const KAVIA_ROBLOX = 'https://www.roblox.com/communities/13827902/Kavi-Cafe#!/about';
+const ALLOWED_GUILD_IDS = [
+    '1385081586285940796',
+    '1313780438061420584'
+];
 
 let verificationFormatMessageId = null;
 const pendingVerifications = new Map();
@@ -98,7 +102,13 @@ async function ensureVerificationFormat(client) {
 client.once('ready', async () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
     await connectDB();
-
+// Leave any unauthorized guilds
+    for (const guild of client.guilds.cache.values()) {
+        if (!ALLOWED_GUILD_IDS.includes(guild.id)) {
+            console.log(`❌ Leaving unauthorized guild: ${guild.name} (${guild.id})`);
+            await guild.leave();
+        }
+    }
     try {
         const pendingDisciplines = await DisciplinePending.find({});
         client._disciplinePending = client._disciplinePending || new Map();
@@ -547,6 +557,11 @@ client.once('ready', async () => {
 
 client.on('guildCreate', async (guild) => {
     console.log(`Joined new guild: ${guild.name}`);
+    if (!ALLOWED_GUILD_IDS.includes(guild.id)) {
+        console.log(`❌ Unauthorized guild ${guild.name} (${guild.id}) — leaving.`);
+        await guild.leave();
+        return;
+    }
     await deployToGuild(guild.id);
 });
 
@@ -579,6 +594,10 @@ client.on('guildMemberAdd', async (member) => {
 // Role restriction + command handler
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
+
+if (!ALLOWED_GUILD_IDS.includes(interaction.guildId)) {
+        return interaction.reply({ content: '❌ This bot is not authorized for this server.', ephemeral: true });
+    }
 
     const role = interaction.guild?.roles.cache.get(ALLOWED_ROLE_ID);
     if (role) {
