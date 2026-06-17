@@ -92,8 +92,9 @@ async function ensureVerificationFormat(client) {
             .setTimestamp();
 
         const msg = await channel.send({ embeds: [formatEmbed] });
+        await msg.pin().catch(err => console.error('Failed to pin verification format message:', err));
         verificationFormatMessageId = msg.id;
-        console.log('✅ Verification format message posted');
+        console.log('✅ Verification format message posted and pinned');
     } catch (err) {
         console.error('Failed to post verification format:', err);
     }
@@ -702,6 +703,19 @@ if (interaction.customId.startsWith('sendsome_select_')) {
                 components: [row],
                 allowedMentions: { roles: [ALLOWED_ROLE_ID] }
             });
+
+            // Clean up the verification channel — delete original message and dropdown reply
+            try {
+                const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+                if (verifyChannel) {
+                    const originalMsg = await verifyChannel.messages.fetch(messageId).catch(() => null);
+                    if (originalMsg) await originalMsg.delete().catch(() => {});
+
+                    await interaction.message.delete().catch(() => {});
+                }
+            } catch (err) {
+                console.error('Failed to clean up verification channel messages:', err);
+            }
 
         } catch (err) {
             console.error('Error handling alliance verify select:', err);
