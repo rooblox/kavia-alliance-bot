@@ -711,17 +711,11 @@ if (interaction.customId.startsWith('sendsome_select_')) {
                 allowedMentions: { roles: [ALLOWED_ROLE_ID] }
             });
 
-            // Clean up the verification channel — delete original message and dropdown reply
+            // Only delete the dropdown reply message — keep original verification message until Accept
             try {
-                const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
-                if (verifyChannel) {
-                    const originalMsg = await verifyChannel.messages.fetch(messageId).catch(() => null);
-                    if (originalMsg) await originalMsg.delete().catch(() => {});
-
-                    await interaction.message.delete().catch(() => {});
-                }
+                await interaction.message.delete().catch(() => {});
             } catch (err) {
-                console.error('Failed to clean up verification channel messages:', err);
+                console.error('Failed to clean up dropdown reply message:', err);
             }
 
         } catch (err) {
