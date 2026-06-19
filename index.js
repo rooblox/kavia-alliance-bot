@@ -670,9 +670,10 @@ if (interaction.customId.startsWith('sendsome_select_')) {
                 components: []
             });
 
+            const isStaff = selectedAlliance === '__STAFF__';
             const { loadAlliances } = require('./utils/allianceStorage');
             const alliances = await loadAlliances().catch(() => []);
-            const alliance = alliances.find(a => a.groupName === selectedAlliance);
+            const alliance = isStaff ? null : alliances.find(a => a.groupName === selectedAlliance);
 
             const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
             if (!verifyLogChannel) return;
@@ -694,12 +695,12 @@ if (interaction.customId.startsWith('sendsome_select_')) {
                 .addFields(
                     { name: 'User', value: `<@${pending.userId}> (${pending.userTag})`, inline: true },
                     { name: 'Submitted At', value: new Date().toLocaleString(), inline: true },
-                    { name: 'Alliance Selected', value: selectedAlliance, inline: false },
-                    { name: 'Alliance Rep Role', value: alliance?.repRoleId ? `<@&${alliance.repRoleId}>` : '⚠️ Not set', inline: true },
-                    { name: 'Alliance Channel', value: alliance?.welcomeChannelId ? `<#${alliance.welcomeChannelId}>` : '⚠️ Not set', inline: true },
+                    { name: 'Alliance Selected', value: isStaff ? '👤 Staff Member' : selectedAlliance, inline: false },
+                    { name: isStaff ? 'Staff Role' : 'Alliance Rep Role', value: isStaff ? `<@&1417981534421520515>` : (alliance?.repRoleId ? `<@&${alliance.repRoleId}>` : '⚠️ Not set'), inline: true },
+                    { name: 'Alliance Channel', value: isStaff ? 'N/A' : (alliance?.welcomeChannelId ? `<#${alliance.welcomeChannelId}>` : '⚠️ Not set'), inline: true },
                     { name: 'Message Content', value: pending.content || '*No text*', inline: false }
                 )
-                .setFooter({ text: 'Kavià Café — Alliance Hub Verification • Accepting will auto-assign all roles' })
+                .setFooter({ text: isStaff ? 'Kavià Café — Staff Verification • Remember to add any additional roles needed' : 'Kavià Café — Alliance Hub Verification • Accepting will auto-assign all roles' })
                 .setTimestamp();
 
             if (pending.imageUrl) embed.setImage(pending.imageUrl);
@@ -827,14 +828,19 @@ client.on('interactionCreate', async (interaction) => {
             const member = await guild.members.fetch(userId).catch(() => null);
             if (!member) return interaction.reply({ content: '❌ Member not found — they may have left the server.', ephemeral: true });
 
-            // Give Allied Reps role
-            await member.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
-
             const pending = pendingVerifications.get(messageId);
             let allianceName = null;
             let allianceChannel = null;
+            let isStaffVerification = pending?.selectedAlliance === '__STAFF__';
 
-            if (pending?.selectedAlliance) {
+            if (isStaffVerification) {
+                await member.roles.add('1417981534421520515').catch(console.error);
+            } else {
+                // Give Allied Reps role
+                await member.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
+            }
+
+            if (pending?.selectedAlliance && !isStaffVerification) {
                 const { findAlliance, saveAlliance } = require('./utils/allianceStorage');
                 const alliance = await findAlliance(pending.selectedAlliance).catch(() => null);
 
@@ -905,14 +911,20 @@ client.on('interactionCreate', async (interaction) => {
                     embeds: [new EmbedBuilder()
                         .setTitle('✅ Verification Accepted!')
                         .setDescription(
-                            `Hey <@${userId}>! 🎉\n\n` +
+                            isStaffVerification ?
+                            (`Hey <@${userId}>! 🎉\n\n` +
+                            `Your verification has been **accepted** by PR Leadership!\n\n` +
+                            `You have been given the **Staff** role. If you require any additional roles, please reach out to PR Leadership.\n\n` +
+                            `Welcome to the team! ☕💜`)
+                            :
+                            (`Hey <@${userId}>! 🎉\n\n` +
                             `Your verification has been **accepted** by PR Leadership!\n\n` +
                             `You have been given the following:\n` +
                             `• ✅ **Allied Representative** role\n` +
                             `${allianceName ? `• ✅ **${allianceName}** representative role\n` : ''}` +
                             `${allianceChannel ? `• ✅ Access to <#${allianceChannel.id}>\n` : ''}\n` +
                             `You now have full access to your alliance channel. If you have any questions, feel free to reach out to PR Leadership.\n\n` +
-                            `Welcome to the hub! ☕💜`
+                            `Welcome to the hub! ☕💜`)
                         )
                         .setColor(0x9B59B6)
                         .setFooter({ text: 'Kavià Café — Alliance Hub' })
@@ -920,6 +932,20 @@ client.on('interactionCreate', async (interaction) => {
                 });
             } catch (err) {
                 console.error(`Failed to DM ${userId} on verify accept:`, err);
+            }
+
+            // Remind staff to add additional roles if this was a staff verification
+            if (isStaffVerification) {
+                try {
+                    const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
+                    if (verifyLogChannel) {
+                        await verifyLogChannel.send({
+                            content: `<@${interaction.user.id}> reminder: <@${userId}> was verified as **Staff** and given the staff role. Please make sure to add any other roles they may need (department roles, rank roles, etc.) manually. 💜`
+                        });
+                    }
+                } catch (err) {
+                    console.error('Failed to send staff role reminder:', err);
+                }
             }
 
         } catch (err) {
@@ -1353,10 +1379,12 @@ client.on('messageCreate', async (message) => {
                 value: a.groupName
             }));
 
+            options.push({ label: '👤 Staff Member (Not an Alliance Rep)', value: '__STAFF__' });
+
             const selectMenu = new StringSelectMenuBuilder()
                 .setCustomId(`verify_alliance_select_${message.id}`)
                 .setPlaceholder('Select the alliance you represent...')
-                .addOptions(options);
+                .addOptions(options.slice(0, 25));
 
             const row = new ActionRowBuilder().addComponents(selectMenu);
 
