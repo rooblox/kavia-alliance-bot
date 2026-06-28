@@ -791,6 +791,12 @@ client.on('interactionCreate', async (interaction) => {
         if (sendsome) await sendsome.handleButton(interaction, client);
         return;
     }
+    if (interaction.customId.startsWith('healthcheck_alert_') ||
+        interaction.customId.startsWith('healthcheck_addlink_')) {
+        const healthCheck = client.commands.get('health-check');
+        if (healthCheck) await healthCheck.handleButton(interaction, client);
+        return;
+    }
     if (interaction.customId.startsWith('sendall_poll_close_')) {
         const sendall = client.commands.get('sendall');
         if (sendall) await sendall.handleButton(interaction, client);
@@ -1246,6 +1252,10 @@ client.on('interactionCreate', async (interaction) => {
         await appeal.handleModal(interaction, client);
     }
 
+    if (interaction.customId.startsWith('healthcheck_link_modal_')) {
+        const healthCheck = client.commands.get('health-check');
+        if (healthCheck) await healthCheck.handleModal(interaction, client);
+    }
     if (interaction.customId.startsWith('sendall_message_modal_') ||
         interaction.customId.startsWith('sendall_poll_modal_')) {
         const sendall = client.commands.get('sendall');
