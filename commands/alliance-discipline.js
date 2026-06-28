@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { findAlliance, saveAlliance, deleteAlliance, loadAlliances } = require('../utils/allianceStorage');
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
-const { DisciplinePending } = require('../db');
+const { DisciplinePending, BlacklistedUser } = require('../db');
 
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 const TERMINATED_CATEGORY_ID = '1428837884252786819';
@@ -217,6 +217,25 @@ module.exports = {
                     repNames.push({ id: repId, name: member ? member.displayName : 'Rep' });
                 }
 
+                // ── Auto-add reps to global blacklist if this is a Blacklist action ──
+                if (isBlacklist) {
+                    for (const repId of theirRepIds) {
+                        const member = await interaction.guild.members.fetch(repId).catch(() => null);
+                        try {
+                            await BlacklistedUser.create({
+                                discordId: repId,
+                                discordTag: member ? member.user.tag : 'Unknown',
+                                robloxUsername: null,
+                                allianceName: groupName,
+                                reason,
+                                addedBy: interaction.user.tag
+                            });
+                        } catch (err) {
+                            console.error(`Failed to add ${repId} to blacklist:`, err);
+                        }
+                    }
+                }
+
                 client._disciplinePending = client._disciplinePending || new Map();
                 client._disciplinePending.set(groupName, {
                     pendingKicks,
@@ -385,7 +404,9 @@ module.exports = {
                 });
             }
 
-            await interaction.editReply(`✅ Action "${action}" successfully applied to alliance "${groupName}".${noChannelWarning}`);
+            const blacklistNote = action === 'blacklist' ? `\n\n🚫 All ${alliance.theirRepIds?.length || 0} rep(s) have been added to the global blacklist.` : '';
+
+            await interaction.editReply(`✅ Action "${action}" successfully applied to alliance "${groupName}".${noChannelWarning}${blacklistNote}`);
 
         } catch (err) {
             console.error('Error executing alliance-discipline:', err);

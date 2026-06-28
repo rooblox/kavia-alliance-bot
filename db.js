@@ -37,7 +37,7 @@ const allianceSchema = new mongoose.Schema({
             removedOn: String
         }
     ],
-    notes: [
+ notes: [
         {
             number: Number,
             text: String,
@@ -47,6 +47,14 @@ const allianceSchema = new mongoose.Schema({
             removed: { type: Boolean, default: false },
             removedBy: String,
             removedAt: String
+        }
+    ],
+    warnings: [
+        {
+            number: Number,
+            reason: String,
+            addedBy: String,
+            addedOn: String
         }
     ],
     addedAt: { type: Date, default: Date.now }
@@ -92,11 +100,22 @@ const awarenessScheduleSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 
+const blacklistedUserSchema = new mongoose.Schema({
+    discordId: { type: String, required: true },
+    discordTag: { type: String, default: 'Unknown' },
+    robloxUsername: { type: String, default: null },
+    allianceName: { type: String, required: true },
+    reason: { type: String, required: true },
+    addedBy: { type: String, required: true },
+    addedAt: { type: Date, default: Date.now }
+});
+
 const Alliance = mongoose.models.Alliance || mongoose.model('Alliance', allianceSchema);
 const AllianceListMessage = mongoose.models.AllianceListMessage || mongoose.model('AllianceListMessage', allianceListMessageSchema);
 const DisciplinePending = mongoose.models.DisciplinePending || mongoose.model('DisciplinePending', disciplinePendingSchema);
 const StrikePending = mongoose.models.StrikePending || mongoose.model('StrikePending', strikePendingSchema);
 const QotdSchedule = mongoose.models.QotdSchedule || mongoose.model('QotdSchedule', qotdScheduleSchema);
 const AwarenessSchedule = mongoose.models.AwarenessSchedule || mongoose.model('AwarenessSchedule', awarenessScheduleSchema);
+const BlacklistedUser = mongoose.models.BlacklistedUser || mongoose.model('BlacklistedUser', blacklistedUserSchema);
 
-module.exports = { connectDB, Alliance, AllianceListMessage, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule };
+module.exports = { connectDB, Alliance, AllianceListMessage, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule, BlacklistedUser };
