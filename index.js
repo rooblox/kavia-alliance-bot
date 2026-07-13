@@ -769,12 +769,7 @@ if (interaction.customId.startsWith('sendsome_select_')) {
 
                 try { await interaction.message.delete().catch(() => {}); } catch {}
 
-                // Delete the prompt message
-                const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
-                if (verifyChannel && pending.promptMessageId) {
-                    await verifyChannel.messages.fetch(pending.promptMessageId).then(m => m.delete()).catch(() => {});
-                }
-                return;
+               return;
             }
 
             // Alliance path — show Roblox username button
@@ -800,11 +795,7 @@ if (interaction.customId.startsWith('sendsome_select_')) {
                 content: ''
             });
 
-            // Delete the prompt message
-            const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
-            if (verifyChannel && pending.promptMessageId) {
-                await verifyChannel.messages.fetch(pending.promptMessageId).then(m => m.delete()).catch(() => {});
-            }
+          
 
         } catch (err) {
             console.error('Error handling alliance verify select:', err);
@@ -1103,12 +1094,16 @@ client.on('interactionCreate', async (interaction) => {
                 pendingVerifications.delete(messageId);
             }
 
-            // Delete original verification message
+        // Delete original verification message and prompt message
             if (messageId) {
                 const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
                 if (verifyChannel) {
                     const originalMsg = await verifyChannel.messages.fetch(messageId).catch(() => null);
                     if (originalMsg) await originalMsg.delete().catch(console.error);
+                    if (pending?.promptMessageId) {
+                        const promptMsg = await verifyChannel.messages.fetch(pending.promptMessageId).catch(() => null);
+                        if (promptMsg) await promptMsg.delete().catch(console.error);
+                    }
                 }
             }
 
@@ -1610,11 +1605,16 @@ client.on('interactionCreate', async (interaction) => {
                 components: []
             });
 
-            if (messageId) {
+           if (messageId) {
                 const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
                 if (verifyChannel) {
                     const originalMsg = await verifyChannel.messages.fetch(messageId).catch(() => null);
                     if (originalMsg) await originalMsg.delete().catch(console.error);
+                    const pendingEntry = pendingVerifications.get(messageId);
+                    if (pendingEntry?.promptMessageId) {
+                        const promptMsg = await verifyChannel.messages.fetch(pendingEntry.promptMessageId).catch(() => null);
+                        if (promptMsg) await promptMsg.delete().catch(console.error);
+                    }
                 }
             }
 
