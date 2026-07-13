@@ -1,5 +1,14 @@
-const { SlashCommandBuilder, EmbedBuilder, ChannelType } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
 const { findAlliance, saveAlliance } = require('../utils/allianceStorage');
+const { refreshAllianceList } = require('../utils/refreshAllianceList');
+
+const CATEGORY_MAP = {
+    Restaurants: '1451290397086060705',
+    Cafes: '1451292986557337761',
+    Others: '1451294316000579848'
+};
+
+const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -10,14 +19,6 @@ module.exports = {
                 .setDescription('Name of the alliance group')
                 .setRequired(true))
         .addStringOption(option =>
-            option.setName('our_reps')
-                .setDescription('Your reps, mention them separated by space')
-                .setRequired(true))
-        .addStringOption(option =>
-            option.setName('their_reps')
-                .setDescription('Their reps, mention them separated by space')
-                .setRequired(true))
-        .addStringOption(option =>
             option.setName('section')
                 .setDescription('Section of the alliance')
                 .setRequired(true)
@@ -26,60 +27,118 @@ module.exports = {
                     { name: 'Cafes', value: 'Cafes' },
                     { name: 'Others', value: 'Others' }
                 ))
+        .addUserOption(option =>
+            option.setName('their_rep_1')
+                .setDescription('Their first rep')
+                .setRequired(true))
+        .addUserOption(option =>
+            option.setName('their_rep_2')
+                .setDescription('Their second rep')
+                .setRequired(false))
+        .addUserOption(option =>
+            option.setName('our_rep_1')
+                .setDescription('Our first rep')
+                .setRequired(false))
+        .addUserOption(option =>
+            option.setName('our_rep_2')
+                .setDescription('Our second rep')
+                .setRequired(false))
         .addStringOption(option =>
             option.setName('discord_link')
                 .setDescription('Discord link of the alliance'))
         .addStringOption(option =>
             option.setName('roblox_link')
-                .setDescription('Roblox link of the alliance'))
-        .addRoleOption(option =>
-            option.setName('rep_role')
-                .setDescription('Role to ping for reps'))
-        .addChannelOption(option =>
-            option.setName('welcome_channel')
-                .setDescription('Channel to send the formatted welcome message')
-                .addChannelTypes(ChannelType.GuildText)),
+                .setDescription('Roblox link of the alliance')),
 
-    async execute(interaction) {
+    async execute(interaction, client) {
         await interaction.deferReply({ ephemeral: true });
 
         try {
             const groupName = interaction.options.getString('group_name');
-            const ourReps = interaction.options.getString('our_reps');
-            const theirReps = interaction.options.getString('their_reps');
             const section = interaction.options.getString('section');
             const discordLink = interaction.options.getString('discord_link') || 'N/A';
             const robloxLink = interaction.options.getString('roblox_link') || 'N/A';
-            const repRole = interaction.options.getRole('rep_role');
-            const welcomeChannel = interaction.options.getChannel('welcome_channel');
+            const theirRep1 = interaction.options.getMember('their_rep_1');
+            const theirRep2 = interaction.options.getMember('their_rep_2');
+            const ourRep1 = interaction.options.getMember('our_rep_1');
+            const ourRep2 = interaction.options.getMember('our_rep_2');
 
             const existing = await findAlliance(groupName);
             if (existing) {
                 return await interaction.editReply(`❌ Alliance **${groupName}** already exists.`);
             }
 
-            const logEmbed = new EmbedBuilder()
-                .setTitle(`New Alliance Added: ${groupName}`)
-                .setColor('Blue')
-                .addFields(
-                    { name: 'Our Reps', value: ourReps },
-                    { name: 'Their Reps', value: theirReps },
-                    { name: 'Discord Link', value: discordLink },
-                    { name: 'Roblox Link', value: robloxLink },
-                    { name: 'Rep Role', value: repRole ? `<@&${repRole.id}>` : 'None' },
-                    { name: 'Section', value: section }
-                )
-                .setTimestamp();
+            const guild = interaction.guild;
+            const categoryId = CATEGORY_MAP[section];
 
-            const logChannel = interaction.guild.channels.cache.find(ch => ch.name === 'alliance-add');
-            if (!logChannel) {
-                return await interaction.editReply('❌ Log channel "alliance-add" not found.');
+            await interaction.editReply('⏳ Setting up alliance... creating roles and channel.');
+
+            // Build rep strings
+            const theirRepsStr = [theirRep1, theirRep2]
+                .filter(Boolean)
+                .map(m => `<@${m.id}>`)
+                .join(' ') || 'N/A';
+
+            const ourRepsStr = [ourRep1, ourRep2]
+                .filter(Boolean)
+                .map(m => `<@${m.id}>`)
+                .join(' ') || 'N/A';
+
+            // ── Create their rep role ──
+            const theirRole = await guild.roles.create({
+                name: groupName,
+                reason: `Alliance role for ${groupName}`
+            });
+
+            // ── Create our rep pair role ──
+            const ourRole = await guild.roles.create({
+                name: `Rep Pair | ${groupName}`,
+                reason: `Our rep pair role for ${groupName}`
+            });
+
+            // ── Assign roles to their reps (alliance role + allied reps role) ──
+            if (theirRep1) {
+                await theirRep1.roles.add(theirRole).catch(console.error);
+                await theirRep1.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
             }
-            await logChannel.send({ embeds: [logEmbed] });
+            if (theirRep2) {
+                await theirRep2.roles.add(theirRole).catch(console.error);
+                await theirRep2.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
+            }
 
-            if (welcomeChannel) {
-                const repsArray = ourReps.split(' ');
-                const welcomeMessage = `:tada: **Welcome New Alliance! | Kavi Café x ${groupName}** :tada:
+            // ── Assign our rep pair role to our reps only ──
+            if (ourRep1) await ourRep1.roles.add(ourRole).catch(console.error);
+            if (ourRep2) await ourRep2.roles.add(ourRole).catch(console.error);
+
+            // ── Create channel ──
+            const channel = await guild.channels.create({
+                name: groupName.toLowerCase().replace(/\s+/g, '-'),
+                type: ChannelType.GuildText,
+                parent: categoryId,
+                permissionOverwrites: [
+                    {
+                        id: guild.id,
+                        deny: [PermissionFlagsBits.ViewChannel]
+                    },
+                    {
+                        id: theirRole.id,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                    },
+                    {
+                        id: ourRole.id,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                    },
+                    {
+                        id: client.user.id,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                    }
+                ],
+                reason: `Alliance channel for ${groupName}`
+            });
+
+            // ── Send welcome message ──
+            const ourRepsArray = [ourRep1, ourRep2].filter(Boolean);
+            const welcomeMessage = `:tada: **Welcome New Alliance! | Kavi Café x ${groupName}** :tada:
 
 We're thrilled to officially welcome your community into an alliance with Kavi Café! :star2:
 
@@ -89,29 +148,59 @@ If you have any questions, concerns, or suggestions, this is the perfect place t
 :busts_in_silhouette: **Your Representative Pair**
 Please meet your Kavi Café representatives:
 
-**• ${repsArray[0] || ''}**
-**• ${repsArray[1] || ''}**
+**• ${ourRepsArray[0] ? `<@${ourRepsArray[0].id}>` : 'TBD'}**
+**• ${ourRepsArray[1] ? `<@${ourRepsArray[1].id}>` : 'TBD'}**
 
 :handshake: **Looking Ahead**
 We're so excited to be working together and building a strong relationship.
 
 :coffee::sparkles: Here's to a successful partnership between **Kavi Café** and **${groupName}**! :sparkles::coffee:`;
-                await welcomeChannel.send({ content: welcomeMessage });
-            }
 
+            await channel.send({ content: welcomeMessage });
+
+            // ── Log embed ──
+            const logEmbed = new EmbedBuilder()
+                .setTitle(`New Alliance Added: ${groupName}`)
+                .setColor('Blue')
+                .addFields(
+                    { name: 'Their Reps', value: theirRepsStr },
+                    { name: 'Our Reps', value: ourRepsStr },
+                    { name: 'Discord Link', value: discordLink },
+                    { name: 'Roblox Link', value: robloxLink },
+                    { name: 'Section', value: section },
+                    { name: 'Channel', value: `<#${channel.id}>` },
+                    { name: 'Their Role', value: `<@&${theirRole.id}>` },
+                    { name: 'Our Rep Role', value: `<@&${ourRole.id}>` }
+                )
+                .setTimestamp();
+
+            const logChannel = guild.channels.cache.find(ch => ch.name === 'alliance-add');
+            if (logChannel) await logChannel.send({ embeds: [logEmbed] });
+
+            // ── Save to MongoDB ──
             await saveAlliance({
                 groupName,
-                ourReps,
-                theirReps,
+                ourReps: ourRepsStr,
+                theirReps: theirRepsStr,
                 discordLink,
                 robloxLink,
-                repRoleId: repRole?.id || null,
-                welcomeChannelId: welcomeChannel?.id || null,
+                repRoleId: theirRole.id,
+                ourRepRoleId: ourRole.id,
+                welcomeChannelId: channel.id,
                 section,
-                strikes: []
+                strikes: [],
+                theirRepIds: [theirRep1?.id, theirRep2?.id].filter(Boolean),
+                ourRepIds: [ourRep1?.id, ourRep2?.id].filter(Boolean)
             });
 
-            await interaction.editReply(`✅ Alliance **${groupName}** successfully added under **${section}**!`);
+            await refreshAllianceList(client);
+            await interaction.editReply(
+                `✅ Alliance **${groupName}** successfully set up under **${section}**!\n\n` +
+                `• Channel: <#${channel.id}>\n` +
+                `• Their role: <@&${theirRole.id}>\n` +
+                `• Our rep role: <@&${ourRole.id}>`
+            );
+
         } catch (err) {
             console.error('Error executing alliance-add:', err);
             if (interaction.deferred || interaction.replied) {
