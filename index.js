@@ -767,6 +767,12 @@ if (interaction.customId.startsWith('sendsome_select_')) {
                 });
 
                 try { await interaction.message.delete().catch(() => {}); } catch {}
+
+                // Delete the prompt message
+                const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+                if (verifyChannel && pending.promptMessageId) {
+                    await verifyChannel.messages.fetch(pending.promptMessageId).then(m => m.delete()).catch(() => {});
+                }
                 return;
             }
 
@@ -778,7 +784,7 @@ if (interaction.customId.startsWith('sendsome_select_')) {
                     .setStyle(ButtonStyle.Primary)
             );
 
-            await interaction.update({
+           await interaction.update({
                 embeds: [new EmbedBuilder()
                     .setTitle('✅ Alliance Selected')
                     .setDescription(
@@ -792,6 +798,12 @@ if (interaction.customId.startsWith('sendsome_select_')) {
                 components: [enterUsernameRow],
                 content: ''
             });
+
+            // Delete the prompt message
+            const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+            if (verifyChannel && pending.promptMessageId) {
+                await verifyChannel.messages.fetch(pending.promptMessageId).then(m => m.delete()).catch(() => {});
+            }
 
         } catch (err) {
             console.error('Error handling alliance verify select:', err);
@@ -1491,19 +1503,24 @@ client.on('interactionCreate', async (interaction) => {
                 ? !!(await qotdGuild.members.fetch(userId).catch(() => null))
                 : false;
 
-            if (!inMainDiscord) {
+        if (!inMainDiscord) {
                 return await interaction.editReply({
                     embeds: [new EmbedBuilder()
                         .setTitle('❌ Not in Main Kavià Discord')
                         .setDescription(
                             `It looks like you're not currently in the **main Kavià Café Discord server**.\n\n` +
                             `You must be in our main server to verify as an Allied Representative.\n\n` +
-                            `👉 **[Join the Kavià Café Discord](https://discord.gg/rMtv4smu36)**\n\n` +
                             `Once you've joined, please post in <#${VERIFICATION_CHANNEL_ID}> again to restart. 💜`
                         )
                         .setColor('Red')
                         .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
-                        .setTimestamp()]
+                        .setTimestamp()],
+                    components: [new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setLabel('Join Kavià Café Discord')
+                            .setURL('https://discord.gg/EFumGubjaQ')
+                            .setStyle(ButtonStyle.Link)
+                    )]
                 });
             }
 
@@ -1698,10 +1715,14 @@ client.on('messageCreate', async (message) => {
 
             const row = new ActionRowBuilder().addComponents(selectMenu);
 
-            await message.reply({
+           const verifyPrompt = await message.reply({
                 content: `Hey <@${message.author.id}>! 👋 Thanks for submitting your verification.\n\nPlease select which alliance you represent from the dropdown below so we can assign you the correct roles automatically! 💜`,
                 components: [row]
             });
+
+            // Store the prompt message ID so we can delete it later
+            const pending = pendingVerifications.get(message.id);
+            if (pending) pending.promptMessageId = verifyPrompt.id;
 
         } catch (err) {
             console.error('Error handling verification message:', err);
