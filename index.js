@@ -103,38 +103,59 @@ async function ensureVerificationFormat(client) {
     }
 }
 
-async function handleVerificationPass(interaction, client, userId, messageId, allianceName, robloxUsername, robloxUserId) {
+async function handleVerificationPass(interaction, client, userId, messageId, allianceName, robloxUsername, robloxUserId, allianceNameClaim = null) {
     const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
+    const isNotFound = allianceName === '__NOT FOUND__' || allianceName.includes('NOT FOUND') || allianceName === '__NOT_FOUND__';
 
-    const acceptDenyRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`verify_accept_${userId}_${messageId}`)
-            .setLabel('✅ Accept')
-            .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-            .setCustomId(`verify_deny_${userId}_${messageId}`)
-            .setLabel('❌ Deny')
-            .setStyle(ButtonStyle.Danger)
-    );
+    let components;
+    if (isNotFound) {
+        const { loadAlliances } = require('./utils/allianceStorage');
+        const alliances = await loadAlliances().catch(() => []);
+        const options = alliances.slice(0, 25).map(a => ({ label: a.groupName, value: a.groupName }));
+        const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId(`verify_staff_pick_alliance_${userId}_${messageId}`)
+            .setPlaceholder('Select the correct alliance for this user...')
+            .addOptions(options);
+        components = [
+            new ActionRowBuilder().addComponents(selectMenu),
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`verify_deny_${userId}_${messageId}`)
+                    .setLabel('❌ Deny')
+                    .setStyle(ButtonStyle.Danger)
+            )
+        ];
+    } else {
+        components = [new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`verify_accept_${userId}_${messageId}`)
+                .setLabel('✅ Accept')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId(`verify_deny_${userId}_${messageId}`)
+                .setLabel('❌ Deny')
+                .setStyle(ButtonStyle.Danger)
+        )];
+    }
 
     if (verifyLogChannel) {
         await verifyLogChannel.send({
             content: `<@&${ALLOWED_ROLE_ID}>`,
             embeds: [new EmbedBuilder()
-                .setTitle('📋 New Verification Submission')
-                .setColor(0x9B59B6)
+                .setTitle(isNotFound ? '⚠️ Verification — Alliance Not Found' : '📋 New Verification Submission')
+                .setColor(isNotFound ? 'Yellow' : 0x9B59B6)
                 .addFields(
                     { name: 'User', value: `<@${userId}>`, inline: true },
-                    { name: 'Alliance', value: allianceName, inline: true },
+                    { name: 'Alliance', value: isNotFound ? `⚠️ Not found — claims: **${allianceNameClaim || 'Unknown'}**` : allianceName, inline: true },
                     { name: 'Roblox Username', value: robloxUsername, inline: true },
                     { name: 'Roblox Profile', value: `https://www.roblox.com/users/${robloxUserId}/profile`, inline: false },
                     { name: '✅ In Main Discord', value: 'Yes', inline: true },
                     { name: '✅ In Kavià Roblox Group', value: 'Yes', inline: true },
                     { name: 'Submitted At', value: new Date().toLocaleString(), inline: false }
                 )
-                .setFooter({ text: 'Kavià Café — Alliance Hub Verification • Accepting will auto-assign all roles' })
+                .setFooter({ text: isNotFound ? 'Kavià Café — Please select the correct alliance below to assign roles' : 'Kavià Café — Alliance Hub Verification • Accepting will auto-assign all roles' })
                 .setTimestamp()],
-            components: [acceptDenyRow],
+            components,
             allowedMentions: { roles: [ALLOWED_ROLE_ID] }
         });
     }
@@ -146,7 +167,7 @@ async function handleVerificationPass(interaction, client, userId, messageId, al
                 `All checks passed! 🎉\n\n` +
                 `Your verification has been forwarded to PR Leadership for review. You'll be notified via DM once a decision has been made.\n\n` +
                 `**Summary:**\n` +
-                `• Alliance: **${allianceName}**\n` +
+                `• Alliance: **${isNotFound ? (allianceNameClaim || 'Not listed') : allianceName}**\n` +
                 `• Roblox Username: **${robloxUsername}**\n` +
                 `• In Main Kavià Discord: ✅\n` +
                 `• In Kavià Roblox Group: ✅\n\n` +
@@ -711,6 +732,43 @@ if (interaction.customId.startsWith('sendsome_select_')) {
         if (sendsome) await sendsome.handleSelectMenu(interaction, client);
         return;
     }
+  if (interaction.customId.startsWith('verify_staff_pick_alliance_')) {
+        try {
+            const withoutPrefix = interaction.customId.replace('verify_staff_pick_alliance_', '');
+            const firstUnderscore = withoutPrefix.indexOf('_');
+            const userId = withoutPrefix.substring(0, firstUnderscore);
+            const messageId = withoutPrefix.substring(firstUnderscore + 1);
+            const selectedAlliance = interaction.values[0];
+
+            let pending = pendingVerifications.get(messageId);
+            if (!pending) {
+                pending = { userId, selectedAlliance: null };
+                pendingVerifications.set(messageId, pending);
+            }
+            pending.selectedAlliance = selectedAlliance;
+
+            await interaction.update({
+                embeds: [EmbedBuilder.from(interaction.message.embeds[0])
+                    .setTitle('📋 Verification — Alliance Identified by Staff')
+                    .setColor(0x9B59B6)
+                    .setFooter({ text: `Alliance set to: ${selectedAlliance} • by ${interaction.user.tag}` })],
+                components: [new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`verify_accept_${userId}_${messageId}`)
+                        .setLabel('✅ Accept')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId(`verify_deny_${userId}_${messageId}`)
+                        .setLabel('❌ Deny')
+                        .setStyle(ButtonStyle.Danger)
+                )]
+            });
+        } catch (err) {
+            console.error('Error handling verify_staff_pick_alliance:', err);
+        }
+        return;
+    }
+
   if (interaction.customId.startsWith('verify_alliance_select_')) {
         try {
             const messageId = interaction.customId.replace('verify_alliance_select_', '');
@@ -772,6 +830,31 @@ if (interaction.customId.startsWith('sendsome_select_')) {
                return;
             }
 
+            // Not found path
+            if (selectedAlliance === '__NOT_FOUND__') {
+                const notFoundRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`verify_enter_username_${pending.userId}_${messageId}___NOT_FOUND__`)
+                        .setLabel('Enter Roblox Username')
+                        .setStyle(ButtonStyle.Primary)
+                );
+
+                await interaction.update({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('❓ Alliance Not Listed')
+                        .setDescription(
+                            `No worries! Click the button below to enter your Roblox username and tell us your alliance name — a staff member will manually assign your roles. 💜\n\n` +
+                            `*Only you can see this message.*`
+                        )
+                        .setColor('Yellow')
+                        .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
+                        .setTimestamp()],
+                    components: [notFoundRow],
+                    content: ''
+                });
+                return;
+            }
+
             // Alliance path — show Roblox username button
             const enterUsernameRow = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
@@ -795,7 +878,7 @@ if (interaction.customId.startsWith('sendsome_select_')) {
                 content: ''
             });
 
-          
+
 
         } catch (err) {
             console.error('Error handling alliance verify select:', err);
@@ -914,11 +997,13 @@ client.on('interactionCreate', async (interaction) => {
                 return interaction.reply({ content: '❌ This is not your verification session.', ephemeral: true });
             }
 
+            const isNotFound = allianceName.trim() === '__NOT FOUND__' || allianceName.trim() === '__NOT_FOUND__';
+
             const modal = new ModalBuilder()
                 .setCustomId(`verify_username_modal_${userId}_${messageId}_${allianceName.replace(/\s+/g, '_')}`)
                 .setTitle('Roblox Username Verification');
 
-            modal.addComponents(
+            const modalComponents = [
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
                         .setCustomId('roblox_username')
@@ -928,8 +1013,23 @@ client.on('interactionCreate', async (interaction) => {
                         .setRequired(true)
                         .setMaxLength(50)
                 )
-            );
+            ];
 
+            if (isNotFound) {
+                modalComponents.push(
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('alliance_name_claim')
+                            .setLabel('What alliance do you represent?')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. Sakura Cafe')
+                            .setRequired(true)
+                            .setMaxLength(100)
+                    )
+                );
+            }
+
+            modal.addComponents(...modalComponents);
             await interaction.showModal(modal);
         } catch (err) {
             console.error('Error handling verify_enter_username:', err);
@@ -1488,6 +1588,9 @@ client.on('interactionCreate', async (interaction) => {
             const messageId = withoutPrefix.substring(firstUnderscore + 1, secondUnderscore);
             const allianceName = withoutPrefix.substring(secondUnderscore + 1).replace(/_/g, ' ');
             const robloxUsername = interaction.fields.getTextInputValue('roblox_username').trim();
+            const allianceNameClaim = allianceName.includes('NOT_FOUND')
+                ? (interaction.fields.getTextInputValue('alliance_name_claim')?.trim() || null)
+                : null;
 
             await interaction.deferReply({ ephemeral: true });
 
@@ -1580,7 +1683,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             // ── All checks passed ──
-            await handleVerificationPass(interaction, client, userId, messageId, allianceName, robloxUsername, robloxUserId);
+            await handleVerificationPass(interaction, client, userId, messageId, allianceName, robloxUsername, robloxUserId, allianceNameClaim);
 
         } catch (err) {
             console.error('Error handling verify_username_modal:', err);
@@ -1708,6 +1811,7 @@ client.on('messageCreate', async (message) => {
             }));
 
             options.push({ label: '👤 Staff Member (Not an Alliance Rep)', value: '__STAFF__' });
+            options.push({ label: '❓ My alliance isn\'t listed', value: '__NOT_FOUND__' });
 
             const selectMenu = new StringSelectMenuBuilder()
                 .setCustomId(`verify_alliance_select_${message.id}`)
