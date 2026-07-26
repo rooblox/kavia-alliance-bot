@@ -110,6 +110,8 @@ module.exports = {
             if (ourRep1) await ourRep1.roles.add(ourRole).catch(console.error);
             if (ourRep2) await ourRep2.roles.add(ourRole).catch(console.error);
 
+            const VIEWER_ROLE_ID = '1449021407282593937';
+
             // ── Create channel ──
             const channel = await guild.channels.create({
                 name: groupName.toLowerCase().replace(/\s+/g, '-'),
@@ -131,6 +133,11 @@ module.exports = {
                     {
                         id: client.user.id,
                         allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                    },
+                    {
+                        id: VIEWER_ROLE_ID,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory],
+                        deny: [PermissionFlagsBits.SendMessages]
                     }
                 ],
                 reason: `Alliance channel for ${groupName}`
