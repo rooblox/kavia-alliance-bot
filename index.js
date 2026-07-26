@@ -727,6 +727,12 @@ client.on('interactionCreate', async (interaction) => {
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isStringSelectMenu()) return;
 
+if (interaction.customId.startsWith('discipline_kick_select_')) {
+        const discipline = client.commands.get('alliance-discipline');
+        if (discipline) await discipline.handleSelectMenu(interaction, client);
+        return;
+    }
+
 if (interaction.customId.startsWith('sendsome_select_')) {
         const sendsome = client.commands.get('sendsome');
         if (sendsome) await sendsome.handleSelectMenu(interaction, client);
