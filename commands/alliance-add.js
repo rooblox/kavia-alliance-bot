@@ -136,8 +136,13 @@ module.exports = {
                     },
                     {
                         id: VIEWER_ROLE_ID,
-                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory],
-                        deny: [PermissionFlagsBits.SendMessages]
+                        allow: [
+                            PermissionFlagsBits.ViewChannel,
+                            PermissionFlagsBits.ReadMessageHistory,
+                            PermissionFlagsBits.SendMessages,
+                            PermissionFlagsBits.AttachFiles,
+                            PermissionFlagsBits.EmbedLinks
+                        ]
                     }
                 ],
                 reason: `Alliance channel for ${groupName}`

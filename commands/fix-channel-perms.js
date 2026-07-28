@@ -26,7 +26,9 @@ module.exports = {
                 await channel.permissionOverwrites.edit(VIEWER_ROLE_ID, {
                     ViewChannel: true,
                     ReadMessageHistory: true,
-                    SendMessages: false
+                    SendMessages: true,
+                    AttachFiles: true,
+                    EmbedLinks: true
                 });
                 fixed++;
             } catch (err) {
