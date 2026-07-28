@@ -30,7 +30,7 @@ module.exports = {
         .addUserOption(option =>
             option.setName('their_rep_1')
                 .setDescription('Their first rep')
-                .setRequired(true))
+                .setRequired(false))
         .addUserOption(option =>
             option.setName('their_rep_2')
                 .setDescription('Their second rep')
@@ -148,9 +148,11 @@ module.exports = {
                 reason: `Alliance channel for ${groupName}`
             });
 
-            // ── Send welcome message ──
+            // ── Send welcome message only if at least one rep is provided ──
             const ourRepsArray = [ourRep1, ourRep2].filter(Boolean);
-            const welcomeMessage = `:tada: **Welcome New Alliance! | Kavi Café x ${groupName}** :tada:
+            const hasAnyRep = !!(theirRep1 || theirRep2);
+            if (hasAnyRep) {
+                const welcomeMessage = `:tada: **Welcome New Alliance! | Kavi Café x ${groupName}** :tada:
 
 We're thrilled to officially welcome your community into an alliance with Kavi Café! :star2:
 
@@ -167,8 +169,8 @@ Please meet your Kavi Café representatives:
 We're so excited to be working together and building a strong relationship.
 
 :coffee::sparkles: Here's to a successful partnership between **Kavi Café** and **${groupName}**! :sparkles::coffee:`;
-
-            await channel.send({ content: welcomeMessage });
+                await channel.send({ content: welcomeMessage });
+            }
 
             // ── Log embed ──
             const logEmbed = new EmbedBuilder()
