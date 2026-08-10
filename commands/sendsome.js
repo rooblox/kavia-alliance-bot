@@ -21,13 +21,15 @@ module.exports = {
                 ))
         .addStringOption(option =>
             option.setName('target')
-                .setDescription('Send to specific alliances or a whole category')
+                .setDescription('Send to specific alliances or a whole team')
                 .setRequired(true)
                 .addChoices(
                     { name: '🎯 Select Specific Alliances', value: 'specific' },
-                    { name: '🍽️ All Restaurants', value: 'Restaurants' },
-                    { name: '☕ All Cafes', value: 'Cafes' },
-                    { name: '🌐 All Others', value: 'Others' }
+                    { name: '👥 Team 1', value: 'team_1' },
+                    { name: '👥 Team 2', value: 'team_2' },
+                    { name: '👥 Team 3', value: 'team_3' },
+                    { name: '👥 Team 4', value: 'team_4' },
+                    { name: '👥 Team 5', value: 'team_5' }
                 )),
 
     async execute(interaction, client) {
@@ -39,7 +41,7 @@ module.exports = {
             const options = alliances.slice(0, 25).map(a => ({
                 label: a.groupName,
                 value: a.groupName,
-                description: a.section
+                description: a.team ? `Team ${a.team}` : 'No team'
             }));
 
             if (options.length === 0) return interaction.reply({ content: '❌ No alliances found.', ephemeral: true });
@@ -62,7 +64,8 @@ module.exports = {
 
         } else {
             const sessionId = `${interaction.user.id}_${Date.now()}`;
-            const targetAlliances = alliances.filter(a => a.section === target);
+            const teamNumber = parseInt(target.replace('team_', ''));
+            const targetAlliances = alliances.filter(a => a.team === teamNumber);
             activeSendsome.set(sessionId, {
                 type,
                 selectedAlliances: targetAlliances.map(a => a.groupName),
@@ -70,7 +73,7 @@ module.exports = {
             });
 
             return interaction.reply({
-                content: `✅ Sending to all **${target}** (${targetAlliances.length} alliance(s)). Click below to compose your ${type}.`,
+                content: `✅ Sending to all **Team ${teamNumber}** alliances (${targetAlliances.length} alliance(s)). Click below to compose your ${type}.`,
                 components: [new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
                         .setCustomId(`sendsome_compose_${sessionId}`)

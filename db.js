@@ -21,7 +21,8 @@ const allianceSchema = new mongoose.Schema({
     repRoleId: { type: String, default: null },
     ourRepRoleId: { type: String, default: null },
     welcomeChannelId: { type: String, default: null },
-    section: { type: String, enum: ['Restaurants', 'Cafes', 'Others'], required: true },
+    section: { type: String, enum: ['Restaurants', 'Cafes', 'Others'], required: false, default: null },
+    team: { type: Number, min: 1, max: 5, default: null },
     theirRepIds: [{ type: String }],
     ourRepIds: [{ type: String }],
     strikes: [

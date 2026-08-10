@@ -13,10 +13,12 @@ module.exports = {
         if (!alliances.length) return await interaction.editReply('❌ No alliances found.');
 
         const total = alliances.length;
-        const bySection = {
-            Restaurants: alliances.filter(a => a.section === 'Restaurants').length,
-            Cafes: alliances.filter(a => a.section === 'Cafes').length,
-            Others: alliances.filter(a => a.section === 'Others').length
+        const byTeam = {
+            1: alliances.filter(a => a.team === 1).length,
+            2: alliances.filter(a => a.team === 2).length,
+            3: alliances.filter(a => a.team === 3).length,
+            4: alliances.filter(a => a.team === 4).length,
+            5: alliances.filter(a => a.team === 5).length,
         };
 
         const totalReps = alliances.reduce((sum, a) => sum + (a.theirRepIds?.length || 0), 0);
@@ -43,9 +45,12 @@ module.exports = {
                     { name: '🏛️ Total Alliances', value: `${total}`, inline: true },
                     { name: '👥 Total Reps', value: `${totalReps}`, inline: true },
                     { name: '📐 Avg Reps / Alliance', value: `${avgRepsPerAlliance}`, inline: true },
-                    { name: '🍽️ Restaurants', value: `${bySection.Restaurants}`, inline: true },
-                    { name: '☕ Cafes', value: `${bySection.Cafes}`, inline: true },
-                    { name: '🌐 Others', value: `${bySection.Others}`, inline: true },
+                    { name: '👥 Team 1', value: `${byTeam[1]}`, inline: true },
+                    { name: '👥 Team 2', value: `${byTeam[2]}`, inline: true },
+                    { name: '👥 Team 3', value: `${byTeam[3]}`, inline: true },
+                    { name: '👥 Team 4', value: `${byTeam[4]}`, inline: true },
+                    { name: '👥 Team 5', value: `${byTeam[5]}`, inline: true },
+                    { name: '\u200b', value: '\u200b', inline: true },
                     { name: '⚠️ Missing Reps (<2)', value: `${missingReps}`, inline: true },
                     { name: '❌ Zero Reps', value: `${noReps}`, inline: true },
                     { name: '📺 No Channel Set', value: `${noChannel}`, inline: true },

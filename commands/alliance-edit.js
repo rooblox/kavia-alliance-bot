@@ -4,6 +4,22 @@ const { refreshAllianceList } = require('../utils/refreshAllianceList');
 
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 
+const TEAM_ROLE_MAP = {
+    1: '1536084366080610414',
+    2: '1536084453234053221',
+    3: '1536084519650598944',
+    4: '1536084475669254305',
+    5: '1536084576043147385'
+};
+
+const TEAM_CATEGORY_MAP = {
+    1: '1451290397086060705',
+    2: '1451292986557337761',
+    3: '1451294316000579848',
+    4: '1536082175475195976',
+    5: '1536082236653178910'
+};
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('alliance-edit')
@@ -43,7 +59,17 @@ module.exports = {
                 .setDescription('Updated Roblox link'))
         .addStringOption(option =>
             option.setName('group_name_new')
-                .setDescription('Rename the alliance')),
+                .setDescription('Rename the alliance'))
+        .addIntegerOption(option =>
+            option.setName('team')
+                .setDescription('Move alliance to a different team')
+                .addChoices(
+                    { name: 'Team 1', value: 1 },
+                    { name: 'Team 2', value: 2 },
+                    { name: 'Team 3', value: 3 },
+                    { name: 'Team 4', value: 4 },
+                    { name: 'Team 5', value: 5 }
+                )),
 
     async autocomplete(interaction) {
         const focusedValue = interaction.options.getFocused().toLowerCase();
@@ -70,6 +96,7 @@ module.exports = {
             const discordLink = interaction.options.getString('discord_link');
             const robloxLink = interaction.options.getString('roblox_link');
             const newGroupName = interaction.options.getString('group_name_new');
+            const newTeam = interaction.options.getInteger('team');
 
             const alliance = await findAlliance(groupName);
             if (!alliance) return await interaction.editReply(`❌ Alliance **${groupName}** not found.`);
@@ -161,6 +188,45 @@ module.exports = {
             if (robloxLink) {
                 alliance.robloxLink = robloxLink;
                 alliance.markModified('robloxLink');
+            }
+
+            // ── Update team ──
+            if (newTeam) {
+                const oldTeamRoleId = alliance.team ? TEAM_ROLE_MAP[alliance.team] : null;
+                const newTeamRoleId = TEAM_ROLE_MAP[newTeam];
+                const newCategoryId = TEAM_CATEGORY_MAP[newTeam];
+
+                // Move channel to new category
+                if (alliance.welcomeChannelId) {
+                    const ch = await client.channels.fetch(alliance.welcomeChannelId).catch(() => null);
+                    if (ch) await ch.setParent(newCategoryId, { lockPermissions: false }).catch(console.error);
+                }
+
+                // Swap team roles on all their reps
+                const theirRepIds = alliance.theirRepIds || [];
+                for (const repId of theirRepIds) {
+                    const member = await guild.members.fetch(repId).catch(() => null);
+                    if (!member) continue;
+                    if (oldTeamRoleId && member.roles.cache.has(oldTeamRoleId)) {
+                        // Check if they're in another alliance in the old team before removing
+                        const { loadAlliances } = require('../utils/allianceStorage');
+                        const allAlliances = await loadAlliances().catch(() => []);
+                        const stillInOldTeam = allAlliances.some(a =>
+                            a.groupName !== groupName &&
+                            a.team === alliance.team &&
+                            (a.theirRepIds || []).includes(repId)
+                        );
+                        if (!stillInOldTeam) {
+                            await member.roles.remove(oldTeamRoleId).catch(console.error);
+                        }
+                    }
+                    if (newTeamRoleId && !member.roles.cache.has(newTeamRoleId)) {
+                        await member.roles.add(newTeamRoleId).catch(console.error);
+                    }
+                }
+
+                alliance.team = newTeam;
+                alliance.markModified('team');
             }
 
             // ── Rename alliance if requested ──

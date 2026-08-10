@@ -640,6 +640,55 @@ client.once('ready', async () => {
             console.error('Scheduler error:', err);
         }
     }, 60 * 1000);
+
+    // ── One-time team roster message on startup ──
+    try {
+        const TEAM_ROLE_IDS = {
+            1: '1536084366080610414',
+            2: '1536084453234053221',
+            3: '1536084519650598944',
+            4: '1536084475669254305',
+            5: '1536084576043147385'
+        };
+        const ROSTER_CHANNEL_ID = '1417981861178904677';
+        const ROSTER_FLAG_KEY = 'teamRosterPosted_v1';
+
+        // Use a simple in-memory flag so it only posts once per process start
+        if (!client._teamRosterPosted) {
+            client._teamRosterPosted = true;
+
+            const rosterChannel = await client.channels.fetch(ROSTER_CHANNEL_ID).catch(() => null);
+            if (rosterChannel) {
+                const mainGuild = await client.guilds.fetch(ALLIANCE_GUILD_ID).catch(() => null);
+                if (mainGuild) {
+                    await mainGuild.members.fetch(); // Cache all members
+
+                    const lines = [];
+                    for (const [teamNum, roleId] of Object.entries(TEAM_ROLE_IDS)) {
+                        const role = mainGuild.roles.cache.get(roleId);
+                        if (!role) {
+                            lines.push(`**Team ${teamNum}:** *(role not found)*`);
+                            continue;
+                        }
+                        const members = mainGuild.members.cache.filter(m => m.roles.cache.has(roleId));
+                        const names = members.map(m => m.displayName).sort().join(', ') || 'Nobody';
+                        lines.push(`**Team ${teamNum}:** ${names}`);
+                    }
+
+                    await rosterChannel.send({
+                        embeds: [new EmbedBuilder()
+                            .setTitle('👥 Team Roster — Bot Startup')
+                            .setDescription(lines.join('\n\n'))
+                            .setColor(0x9B59B6)
+                            .setFooter({ text: `Posted on bot startup — ${new Date().toLocaleString()}` })
+                            .setTimestamp()]
+                    });
+                }
+            }
+        }
+    } catch (err) {
+        console.error('Failed to post team roster:', err);
+    }
 });
 
 client.on('guildCreate', async (guild) => {

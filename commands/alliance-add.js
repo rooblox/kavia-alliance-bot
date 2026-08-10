@@ -2,13 +2,24 @@ const { SlashCommandBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits } = 
 const { findAlliance, saveAlliance } = require('../utils/allianceStorage');
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
 
-const CATEGORY_MAP = {
-    Restaurants: '1451290397086060705',
-    Cafes: '1451292986557337761',
-    Others: '1451294316000579848'
+const TEAM_CATEGORY_MAP = {
+    1: '1451290397086060705',
+    2: '1451292986557337761',
+    3: '1451294316000579848',
+    4: '1536082175475195976',
+    5: '1536082236653178910'
+};
+
+const TEAM_ROLE_MAP = {
+    1: '1536084366080610414',
+    2: '1536084453234053221',
+    3: '1536084519650598944',
+    4: '1536084475669254305',
+    5: '1536084576043147385'
 };
 
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
+const VIEWER_ROLE_ID = '1449021407282593937';
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -18,14 +29,16 @@ module.exports = {
             option.setName('group_name')
                 .setDescription('Name of the alliance group')
                 .setRequired(true))
-        .addStringOption(option =>
-            option.setName('section')
-                .setDescription('Section of the alliance')
+        .addIntegerOption(option =>
+            option.setName('team')
+                .setDescription('Which team this alliance belongs to')
                 .setRequired(true)
                 .addChoices(
-                    { name: 'Restaurants', value: 'Restaurants' },
-                    { name: 'Cafes', value: 'Cafes' },
-                    { name: 'Others', value: 'Others' }
+                    { name: 'Team 1', value: 1 },
+                    { name: 'Team 2', value: 2 },
+                    { name: 'Team 3', value: 3 },
+                    { name: 'Team 4', value: 4 },
+                    { name: 'Team 5', value: 5 }
                 ))
         .addUserOption(option =>
             option.setName('their_rep_1')
@@ -55,7 +68,7 @@ module.exports = {
 
         try {
             const groupName = interaction.options.getString('group_name');
-            const section = interaction.options.getString('section');
+            const team = interaction.options.getInteger('team');
             const discordLink = interaction.options.getString('discord_link') || 'N/A';
             const robloxLink = interaction.options.getString('roblox_link') || 'N/A';
             const theirRep1 = interaction.options.getMember('their_rep_1');
@@ -69,7 +82,8 @@ module.exports = {
             }
 
             const guild = interaction.guild;
-            const categoryId = CATEGORY_MAP[section];
+            const categoryId = TEAM_CATEGORY_MAP[team];
+            const teamRoleId = TEAM_ROLE_MAP[team];
 
             await interaction.editReply('⏳ Setting up alliance... creating roles and channel.');
 
@@ -96,21 +110,25 @@ module.exports = {
                 reason: `Our rep pair role for ${groupName}`
             });
 
-            // ── Assign roles to their reps (alliance role + allied reps role) ──
+            // ── Assign roles to their reps (alliance role + allied reps role + team role) ──
             if (theirRep1) {
                 await theirRep1.roles.add(theirRole).catch(console.error);
                 await theirRep1.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
+                if (teamRoleId && !theirRep1.roles.cache.has(teamRoleId)) {
+                    await theirRep1.roles.add(teamRoleId).catch(console.error);
+                }
             }
             if (theirRep2) {
                 await theirRep2.roles.add(theirRole).catch(console.error);
                 await theirRep2.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
+                if (teamRoleId && !theirRep2.roles.cache.has(teamRoleId)) {
+                    await theirRep2.roles.add(teamRoleId).catch(console.error);
+                }
             }
 
             // ── Assign our rep pair role to our reps only ──
             if (ourRep1) await ourRep1.roles.add(ourRole).catch(console.error);
             if (ourRep2) await ourRep2.roles.add(ourRole).catch(console.error);
-
-            const VIEWER_ROLE_ID = '1449021407282593937';
 
             // ── Create channel ──
             const channel = await guild.channels.create({
@@ -181,7 +199,7 @@ We're so excited to be working together and building a strong relationship.
                     { name: 'Our Reps', value: ourRepsStr },
                     { name: 'Discord Link', value: discordLink },
                     { name: 'Roblox Link', value: robloxLink },
-                    { name: 'Section', value: section },
+                    { name: 'Team', value: `Team ${team}` },
                     { name: 'Channel', value: `<#${channel.id}>` },
                     { name: 'Their Role', value: `<@&${theirRole.id}>` },
                     { name: 'Our Rep Role', value: `<@&${ourRole.id}>` }
@@ -201,7 +219,7 @@ We're so excited to be working together and building a strong relationship.
                 repRoleId: theirRole.id,
                 ourRepRoleId: ourRole.id,
                 welcomeChannelId: channel.id,
-                section,
+                team,
                 strikes: [],
                 theirRepIds: [theirRep1?.id, theirRep2?.id].filter(Boolean),
                 ourRepIds: [ourRep1?.id, ourRep2?.id].filter(Boolean)
@@ -209,10 +227,11 @@ We're so excited to be working together and building a strong relationship.
 
             await refreshAllianceList(client);
             await interaction.editReply(
-                `✅ Alliance **${groupName}** successfully set up under **${section}**!\n\n` +
+                `✅ Alliance **${groupName}** successfully set up under **Team ${team}**!\n\n` +
                 `• Channel: <#${channel.id}>\n` +
                 `• Their role: <@&${theirRole.id}>\n` +
-                `• Our rep role: <@&${ourRole.id}>`
+                `• Our rep role: <@&${ourRole.id}>\n` +
+                `• Team role: <@&${teamRoleId}>`
             );
 
         } catch (err) {

@@ -16,6 +16,17 @@ module.exports = {
                     { name: 'All', value: 'all' }
                 ))
         .addIntegerOption(option =>
+            option.setName('team')
+                .setDescription('Filter by team number')
+                .setRequired(false)
+                .addChoices(
+                    { name: 'Team 1', value: 1 },
+                    { name: 'Team 2', value: 2 },
+                    { name: 'Team 3', value: 3 },
+                    { name: 'Team 4', value: 4 },
+                    { name: 'Team 5', value: 5 }
+                ))
+        .addIntegerOption(option =>
             option.setName('limit')
                 .setDescription('Number of entries to show (default 15, max 25)')
                 .setRequired(false)),
@@ -24,9 +35,11 @@ module.exports = {
         await interaction.deferReply({ ephemeral: true });
 
         const type = interaction.options.getString('type') || 'all';
+        const teamFilter = interaction.options.getInteger('team') || null;
         const limit = Math.min(interaction.options.getInteger('limit') || 15, 25);
 
-        const alliances = await loadAlliances().catch(() => []);
+        let alliances = await loadAlliances().catch(() => []);
+        if (teamFilter) alliances = alliances.filter(a => a.team === teamFilter);
         const entries = [];
 
         for (const alliance of alliances) {
@@ -77,7 +90,7 @@ module.exports = {
 
         await interaction.editReply({
             embeds: [new EmbedBuilder()
-                .setTitle(`📜 Audit Log${type !== 'all' ? ` — ${type.charAt(0).toUpperCase() + type.slice(1)}` : ''}`)
+                .setTitle(`📜 Audit Log${type !== 'all' ? ` — ${type.charAt(0).toUpperCase() + type.slice(1)}` : ''}${teamFilter ? ` — Team ${teamFilter}` : ''}`)
                 .setDescription(lines.join('\n\n').slice(0, 4000))
                 .setColor(0x9B59B6)
                 .setFooter({ text: `Showing ${limited.length} of ${entries.length} total entries` })

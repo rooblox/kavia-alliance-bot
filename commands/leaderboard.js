@@ -27,7 +27,7 @@ module.exports = {
 
             return {
                 groupName: a.groupName,
-                section: a.section,
+                team: a.team || '?',
                 score,
                 activeStrikes,
                 repCount,
@@ -40,7 +40,7 @@ module.exports = {
         const medals = ['🥇', '🥈', '🥉'];
         const lines = scored.slice(0, 15).map((a, i) => {
             const medal = medals[i] || `**${i + 1}.**`;
-            return `${medal} **${a.groupName}** (${a.section}) — Score: **${a.score}/100**\n` +
+            return `${medal} **${a.groupName}** (Team ${a.team}) — Score: **${a.score}/100**\n` +
                    `> ${a.repCount}/2 reps • ${a.activeStrikes} active strike(s) • ${a.warningCount} warning(s)`;
         });
 
