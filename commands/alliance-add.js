@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
 const { findAlliance, saveAlliance } = require('../utils/allianceStorage');
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
+const { postTeamLog } = require('../utils/teamLog');
 
 const TEAM_CATEGORY_MAP = {
     1: '1451290397086060705',
@@ -192,20 +193,23 @@ We're so excited to be working together and building a strong relationship.
 
             // ── Log embed ──
             const logEmbed = new EmbedBuilder()
-                .setTitle(`New Alliance Added: ${groupName}`)
+                .setTitle(`✨ New Alliance Added: ${groupName}`)
                 .setColor('Blue')
                 .addFields(
                     { name: 'Their Reps', value: theirRepsStr },
                     { name: 'Our Reps', value: ourRepsStr },
                     { name: 'Discord Link', value: discordLink },
                     { name: 'Roblox Link', value: robloxLink },
-                    { name: 'Team', value: `Team ${team}` },
                     { name: 'Channel', value: `<#${channel.id}>` },
                     { name: 'Their Role', value: `<@&${theirRole.id}>` },
-                    { name: 'Our Rep Role', value: `<@&${ourRole.id}>` }
+                    { name: 'Our Rep Role', value: `<@&${ourRole.id}>` },
+                    { name: 'Added By', value: interaction.user.tag }
                 )
                 .setTimestamp();
 
+            await postTeamLog(client, team, groupName, logEmbed);
+
+            // Also log to alliance-add channel
             const logChannel = guild.channels.cache.find(ch => ch.name === 'alliance-add');
             if (logChannel) await logChannel.send({ embeds: [logEmbed] });
 

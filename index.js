@@ -236,6 +236,17 @@ client.once('ready', async () => {
 
     await ensureVerificationFormat(client);
 
+    // ── Ensure team log channels exist ──
+    try {
+        const { getOrCreateTeamLogChannel } = require('./utils/teamLog');
+        for (let t = 1; t <= 5; t++) {
+            await getOrCreateTeamLogChannel(client, t);
+        }
+        console.log('✅ Team log channels verified/created');
+    } catch (err) {
+        console.error('❌ Failed to create team log channels:', err);
+    }
+
     const qotdCmd = client.commands.get('qotd');
     const awarenessCmd = client.commands.get('awareness');
 
@@ -1244,6 +1255,18 @@ client.on('interactionCreate', async (interaction) => {
                             });
                         }
                     }
+
+                    // Team log for new verified rep
+                    const { postTeamLog } = require('./utils/teamLog');
+                    const verifyEmbed = new EmbedBuilder()
+                        .setTitle('✅ New Rep Verified')
+                        .setColor(0x9B59B6)
+                        .addFields(
+                            { name: 'New Rep', value: `<@${userId}> (${member.user.tag})`, inline: true },
+                            { name: 'Accepted By', value: interaction.user.tag, inline: true }
+                        )
+                        .setTimestamp();
+                    await postTeamLog(client, alliance.team, allianceName, verifyEmbed);
                 }
 
                 pendingVerifications.delete(messageId);

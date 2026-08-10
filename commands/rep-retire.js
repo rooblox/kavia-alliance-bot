@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { loadAlliances, findAlliance, saveAlliance } = require('../utils/allianceStorage');
+const { postTeamLog } = require('../utils/teamLog');
 
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 const LOG_CHANNEL_ID = '1462580398935642144';
@@ -52,6 +53,18 @@ module.exports = {
                 }
 
                 await saveAlliance(alliance);
+
+                // Team log for this alliance
+                const retireEmbed = new EmbedBuilder()
+                    .setTitle('👋 Kavià Rep Retired')
+                    .setColor('Orange')
+                    .addFields(
+                        { name: 'Retired Rep', value: `<@${repUser.id}> (${repUser.tag})`, inline: true },
+                        { name: 'Processed By', value: interaction.user.tag, inline: true },
+                        { name: 'Reason', value: reason, inline: false }
+                    )
+                    .setTimestamp();
+                await postTeamLog(client, alliance.team, alliance.groupName, retireEmbed);
 
                 // Notify the alliance channel
                 if (alliance.welcomeChannelId) {

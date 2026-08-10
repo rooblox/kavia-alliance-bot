@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, ChannelType, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { findAlliance, saveAlliance, loadAlliances } = require('../utils/allianceStorage');
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
+const { postTeamLog } = require('../utils/teamLog');
 
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 
@@ -259,6 +260,26 @@ module.exports = {
 
             await saveAlliance(alliance);
             await refreshAllianceList(client);
+
+            // ── Team log ──
+            const changesArr = [];
+            if (theirRep1 || theirRep2) changesArr.push(`Their reps updated`);
+            if (ourRep1 || ourRep2) changesArr.push(`Our reps updated`);
+            if (discordLink) changesArr.push(`Discord link updated`);
+            if (robloxLink) changesArr.push(`Roblox link updated`);
+            if (newTeam) changesArr.push(`Moved to Team ${newTeam}`);
+            if (newGroupName) changesArr.push(`Renamed to ${newGroupName}`);
+            if (changesArr.length > 0) {
+                const editEmbed = new EmbedBuilder()
+                    .setTitle(`✏️ Alliance Updated: ${newGroupName || groupName}`)
+                    .setColor('Yellow')
+                    .addFields(
+                        { name: 'Changes', value: changesArr.join('\n') },
+                        { name: 'Updated By', value: interaction.user.tag }
+                    )
+                    .setTimestamp();
+                await postTeamLog(client, alliance.team || newTeam, newGroupName || groupName, editEmbed);
+            }
 
             // ── Ask to kick removed reps ──
             if (removedTheirRepIds.length > 0) {

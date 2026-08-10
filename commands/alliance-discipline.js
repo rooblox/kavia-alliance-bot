@@ -2,6 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 const { findAlliance, saveAlliance, deleteAlliance, loadAlliances } = require('../utils/allianceStorage');
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
 const { DisciplinePending, BlacklistedUser } = require('../db');
+const { postTeamLog } = require('../utils/teamLog');
 
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 const TERMINATED_CATEGORY_ID = '1428837884252786819';
@@ -313,24 +314,27 @@ module.exports = {
                 return;
             }
 
-            if (logChannel) {
-                await logChannel.send({
-                    embeds: [new EmbedBuilder()
-                        .setTitle('☕ | Kavia Café — Alliance / Termination & Strike Log')
-                        .setColor(action === 'termination' ? 'Red' : action === 'blacklist' ? 0x000000 : 'Orange')
-                        .addFields(
-                            { name: '📅 Date', value: new Date().toLocaleString() },
-                            { name: '🏛️ Alliance Name', value: groupName },
-                            { name: '🔗 Group Link', value: alliance.robloxLink || 'N/A' },
-                            { name: '👤 Logged By', value: interaction.user.tag },
-                            { name: '⚠️ Action Taken', value: action === 'strike1' ? 'Strike 1' : action === 'strike2' ? 'Strike 2' : action === 'blacklist' ? 'Blacklist' : 'Termination' },
-                            { name: '📝 Reason', value: reason },
-                            { name: '💬 Notes / Evidence', value: notes },
-                            { name: '✅ Decision Approved By', value: approvedBy },
-                            { name: '📌 Follow-Up Action', value: followUp }
-                        )
-                        .setTimestamp()]
-                });
+            // ── Log strikes to team log + global log ──
+            if (action === 'strike1' || action === 'strike2') {
+                const strikeEmbed = new EmbedBuilder()
+                    .setTitle(`⚠️ Alliance Strike — ${groupName}`)
+                    .setColor('Orange')
+                    .addFields(
+                        { name: '📅 Date', value: new Date().toLocaleString() },
+                        { name: '🔗 Group Link', value: alliance.robloxLink || 'N/A' },
+                        { name: '👤 Logged By', value: interaction.user.tag },
+                        { name: '⚠️ Action Taken', value: action === 'strike1' ? 'Strike 1' : 'Strike 2' },
+                        { name: '📝 Reason', value: reason },
+                        { name: '💬 Notes / Evidence', value: notes },
+                        { name: '✅ Decision Approved By', value: approvedBy },
+                        { name: '📌 Follow-Up Action', value: followUp }
+                    )
+                    .setTimestamp();
+                await postTeamLog(client, alliance.team, groupName, strikeEmbed);
+            }
+
+            if (action === 'remove-strike') {
+                // already returned above, this won't run
             }
 
             const blacklistNote = action === 'blacklist' ? `\n\n🚫 All ${alliance.theirRepIds?.length || 0} rep(s) have been added to the global blacklist.` : '';
@@ -579,24 +583,20 @@ async function proceedWithTermination(client, groupName, kickIds, actionLabel, a
         }, 24 * 60 * 60 * 1000);
     }
 
-    if (logChannel) {
-        await logChannel.send({
-            embeds: [new EmbedBuilder()
-                .setTitle('☕ | Kavia Café — Alliance / Termination & Strike Log')
-                .setColor(action === 'termination' ? 'Red' : 0x000000)
-                .addFields(
-                    { name: '📅 Date', value: new Date().toLocaleString() },
-                    { name: '🏛️ Alliance Name', value: groupName },
-                    { name: '🔗 Group Link', value: alliance.robloxLink || 'N/A' },
-                    { name: '👤 Logged By', value: staffName },
-                    { name: '⚠️ Action Taken', value: action === 'blacklist' ? 'Blacklist' : 'Termination' },
-                    { name: '📝 Reason', value: reason },
-                    { name: '💬 Notes / Evidence', value: notes || 'N/A' },
-                    { name: '✅ Decision Approved By', value: approvedBy || 'N/A' },
-                    { name: '📌 Follow-Up Action', value: followUp || 'N/A' },
-                    { name: '👢 Members to Kick', value: kickIds.length > 0 ? kickIds.map(id => `<@${id}>`).join(', ') : 'None' }
-                )
-                .setTimestamp()]
-        });
-    }
+    const termEmbed = new EmbedBuilder()
+        .setTitle(`${action === 'blacklist' ? '🚫 Alliance Blacklisted' : '❌ Alliance Terminated'}: ${groupName}`)
+        .setColor(action === 'termination' ? 'Red' : 0x000000)
+        .addFields(
+            { name: '📅 Date', value: new Date().toLocaleString() },
+            { name: '🔗 Group Link', value: alliance.robloxLink || 'N/A' },
+            { name: '👤 Logged By', value: staffName },
+            { name: '⚠️ Action Taken', value: action === 'blacklist' ? 'Blacklist' : 'Termination' },
+            { name: '📝 Reason', value: reason },
+            { name: '💬 Notes / Evidence', value: notes || 'N/A' },
+            { name: '✅ Decision Approved By', value: approvedBy || 'N/A' },
+            { name: '📌 Follow-Up Action', value: followUp || 'N/A' },
+            { name: '👢 Members to Kick', value: kickIds.length > 0 ? kickIds.map(id => `<@${id}>`).join(', ') : 'None' }
+        )
+        .setTimestamp();
+    await postTeamLog(client, alliance.team, groupName, termEmbed);
 }

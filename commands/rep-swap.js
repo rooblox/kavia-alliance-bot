@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { findAlliance, saveAlliance, loadAlliances } = require('../utils/allianceStorage');
+const { postTeamLog } = require('../utils/teamLog');
 
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 
@@ -79,6 +80,18 @@ module.exports = {
                 });
             }
         }
+
+        // Team log
+        const swapEmbed = new EmbedBuilder()
+            .setTitle('🔄 Representative Swap')
+            .setColor(0x9B59B6)
+            .addFields(
+                { name: 'Removed Rep', value: `<@${oldRep.id}> (${oldRep.user.tag})`, inline: true },
+                { name: 'New Rep', value: `<@${newRep.id}> (${newRep.user.tag})`, inline: true },
+                { name: 'Done By', value: interaction.user.tag, inline: false }
+            )
+            .setTimestamp();
+        await postTeamLog(client, alliance.team, groupName, swapEmbed);
 
         await interaction.editReply(`✅ Swapped <@${oldRep.id}> → <@${newRep.id}> for **${groupName}**. Roles updated and alliance record saved.`);
     }
