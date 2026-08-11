@@ -1505,7 +1505,15 @@ client.on('interactionCreate', async (interaction) => {
             if (!client._disciplineAcks.has(groupName)) client._disciplineAcks.set(groupName, new Set());
             client._disciplineAcks.get(groupName).add(userId);
 
-            await interaction.reply({ content: '✅ Thank you for acknowledging. You will now be removed from the server.', ephemeral: true });
+            const pendingData = client._disciplinePending?.get(groupName);
+            const shouldKick = pendingData?.pendingKicks?.has(userId) ?? false;
+
+            await interaction.reply({
+                content: shouldKick
+                    ? '✅ Thank you for acknowledging. You will now be removed from the server.'
+                    : '✅ Thank you for acknowledging.',
+                ephemeral: true
+            });
 
             try {
                 const oldComponents = interaction.message.components[0]?.components || [];
@@ -1523,7 +1531,6 @@ client.on('interactionCreate', async (interaction) => {
                 console.error('Failed to update discipline message:', err);
             }
 
-            const pendingData = client._disciplinePending?.get(groupName);
             if (pendingData) pendingData.pendingKicks.delete(userId);
 
             await DisciplinePending.findOneAndUpdate(
@@ -1538,28 +1545,30 @@ client.on('interactionCreate', async (interaction) => {
             const member = await guild.members.fetch(userId).catch(() => null);
             if (!member) return;
 
-            try {
-                await member.send({
-                    embeds: [new EmbedBuilder()
-                        .setTitle(`${actionLabel.charAt(0).toUpperCase() + actionLabel.slice(1)} Notice`)
-                        .setDescription(
-                            `Greetings, <@${userId}>\n\n` +
-                            `I'm unfortunately saddened to inform you that your alliance with **Kavià Café** has been **${actionLabel}d**, effective immediately.\n\n` +
-                            `This decision was made after careful consideration and was not made lightly.\n\n` +
-                            `🗒️ **Reason:** ${pendingData?.reason || 'N/A'}\n\n` +
-                            `We appreciate the time and effort you've contributed during your time as an alliance with **Kavià Café**.\n\n` +
-                            `If you believe this decision was made in error, please feel free to DM me for clarification or open a ticket.\n\n` +
-                            `**Regards,**\n**${pendingData?.staffName || 'PR Staff'}**\n**${pendingData?.rank || 'PR Staff'}**\n**Kavià || Public Relations Team**`
-                        )
-                        .setColor(actionLabel === 'blacklist' ? 0x000000 : 'Red')
-                        .setFooter({ text: 'Kavià Café — Public Relations Department' })
-                        .setTimestamp()]
-                });
-            } catch (err) {
-                console.error(`Failed to DM ${userId}:`, err);
-            }
+            if (shouldKick) {
+                try {
+                    await member.send({
+                        embeds: [new EmbedBuilder()
+                            .setTitle(`${actionLabel.charAt(0).toUpperCase() + actionLabel.slice(1)} Notice`)
+                            .setDescription(
+                                `Greetings, <@${userId}>\n\n` +
+                                `I'm unfortunately saddened to inform you that your alliance with **Kavià Café** has been **${actionLabel}d**, effective immediately.\n\n` +
+                                `This decision was made after careful consideration and was not made lightly.\n\n` +
+                                `🗒️ **Reason:** ${pendingData?.reason || 'N/A'}\n\n` +
+                                `We appreciate the time and effort you've contributed during your time as an alliance with **Kavià Café**.\n\n` +
+                                `If you believe this decision was made in error, please feel free to DM me for clarification or open a ticket.\n\n` +
+                                `**Regards,**\n**${pendingData?.staffName || 'PR Staff'}**\n**${pendingData?.rank || 'PR Staff'}**\n**Kavià || Public Relations Team**`
+                            )
+                            .setColor(actionLabel === 'blacklist' ? 0x000000 : 'Red')
+                            .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                            .setTimestamp()]
+                    });
+                } catch (err) {
+                    console.error(`Failed to DM ${userId}:`, err);
+                }
 
-            await member.kick(`Alliance ${actionLabel} acknowledged`).catch(console.error);
+                await member.kick(`Alliance ${actionLabel} acknowledged`).catch(console.error);
+            }
 
             if (pendingData && pendingData.pendingKicks.size === 0) {
                 const g = await client.guilds.fetch(pendingData.guildId).catch(() => null);
