@@ -103,7 +103,7 @@ async function ensureVerificationFormat(client) {
     }
 }
 
-async function handleVerificationPass(interaction, client, userId, messageId, allianceName, robloxUsername, robloxUserId, allianceNameClaim = null) {
+async function handleVerificationPass(interaction, client, userId, messageId, allianceName, robloxUsername, robloxUserId, allianceNameClaim = null, invitedBy = null) {
     const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
     const isNotFound = allianceName === '__NOT FOUND__' || allianceName.includes('NOT FOUND') || allianceName === '__NOT_FOUND__';
 
@@ -151,6 +151,7 @@ async function handleVerificationPass(interaction, client, userId, messageId, al
                     { name: 'Roblox Profile', value: `https://www.roblox.com/users/${robloxUserId}/profile`, inline: false },
                     { name: '✅ In Main Discord', value: 'Yes', inline: true },
                     { name: '✅ In Kavià Roblox Group', value: 'Yes', inline: true },
+                    ...(invitedBy ? [{ name: '👤 Invited By', value: invitedBy, inline: true }] : []),
                     { name: 'Submitted At', value: new Date().toLocaleString(), inline: false }
                 )
                 .setFooter({ text: isNotFound ? 'Kavià Café — Please select the correct alliance below to assign roles' : 'Kavià Café — Alliance Hub Verification • Accepting will auto-assign all roles' })
@@ -1093,6 +1094,15 @@ client.on('interactionCreate', async (interaction) => {
                             .setPlaceholder('e.g. Sakura Cafe')
                             .setRequired(true)
                             .setMaxLength(100)
+                    ),
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('invited_by')
+                            .setLabel('Who invited you? (staff member name)')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. Nina')
+                            .setRequired(false)
+                            .setMaxLength(100)
                     )
                 );
             }
@@ -1734,10 +1744,18 @@ client.on('interactionCreate', async (interaction) => {
             const secondUnderscore = withoutPrefix.indexOf('_', firstUnderscore + 1);
             const userId = withoutPrefix.substring(0, firstUnderscore);
             const messageId = withoutPrefix.substring(firstUnderscore + 1, secondUnderscore);
-            const allianceName = withoutPrefix.substring(secondUnderscore + 1).replace(/_/g, ' ');
+            const rawAlliancePart = withoutPrefix.substring(secondUnderscore + 1);
+
+            // Detect not-found BEFORE replacing underscores
+            const isNotFound = rawAlliancePart === '__NOT_FOUND__' || rawAlliancePart.includes('NOT_FOUND');
+            const allianceName = isNotFound ? '__NOT_FOUND__' : rawAlliancePart.replace(/_/g, ' ');
+
             const robloxUsername = interaction.fields.getTextInputValue('roblox_username').trim();
-            const allianceNameClaim = allianceName.includes('NOT_FOUND')
+            const allianceNameClaim = isNotFound
                 ? (interaction.fields.getTextInputValue('alliance_name_claim')?.trim() || null)
+                : null;
+            const invitedBy = isNotFound
+                ? (interaction.fields.getTextInputValue('invited_by')?.trim() || null)
                 : null;
 
             await interaction.deferReply({ ephemeral: true });
@@ -1831,7 +1849,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             // ── All checks passed ──
-            await handleVerificationPass(interaction, client, userId, messageId, allianceName, robloxUsername, robloxUserId, allianceNameClaim);
+            await handleVerificationPass(interaction, client, userId, messageId, allianceName, robloxUsername, robloxUserId, allianceNameClaim, invitedBy);
 
         } catch (err) {
             console.error('Error handling verify_username_modal:', err);
