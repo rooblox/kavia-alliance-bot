@@ -109,16 +109,16 @@ async function handleVerificationPass(interaction, client, userId, messageId, al
 
     let components;
     if (isNotFound) {
-        const { loadAlliances } = require('./utils/allianceStorage');
-        const alliances = await loadAlliances().catch(() => []);
-        const options = alliances.slice(0, 25).map(a => ({ label: a.groupName, value: a.groupName }));
-        const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId(`verify_staff_pick_alliance_${userId}_${messageId}`)
-            .setPlaceholder('Select the correct alliance for this user...')
-            .addOptions(options);
         components = [
-            new ActionRowBuilder().addComponents(selectMenu),
             new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`verify_create_alliance_${userId}_${messageId}`)
+                    .setLabel('✅ Verify + Create Alliance')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId(`verify_accept_${userId}_${messageId}`)
+                    .setLabel('✅ Verify Only')
+                    .setStyle(ButtonStyle.Primary),
                 new ButtonBuilder()
                     .setCustomId(`verify_deny_${userId}_${messageId}`)
                     .setLabel('❌ Deny')
@@ -1188,6 +1188,65 @@ client.on('interactionCreate', async (interaction) => {
         }
         return;
     }
+    // ── Verify + Create Alliance ──
+    if (interaction.customId.startsWith('verify_create_alliance_')) {
+        try {
+            const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+            const withoutPrefix = interaction.customId.replace('verify_create_alliance_', '');
+            const firstUnderscore = withoutPrefix.indexOf('_');
+            const userId = withoutPrefix.substring(0, firstUnderscore);
+            const messageId = withoutPrefix.substring(firstUnderscore + 1);
+
+            const modal = new ModalBuilder()
+                .setCustomId(`verify_create_alliance_modal_${userId}_${messageId}`)
+                .setTitle('Create Alliance & Verify Rep');
+
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('alliance_name')
+                        .setLabel('Alliance Name (exact)')
+                        .setStyle(TextInputStyle.Short)
+                        .setPlaceholder('e.g. Sakura Cafe')
+                        .setRequired(true)
+                        .setMaxLength(100)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('team_number')
+                        .setLabel('Team Number (1-5)')
+                        .setStyle(TextInputStyle.Short)
+                        .setPlaceholder('e.g. 3')
+                        .setRequired(true)
+                        .setMaxLength(1)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('discord_link')
+                        .setLabel('Discord Link (optional)')
+                        .setStyle(TextInputStyle.Short)
+                        .setPlaceholder('https://discord.gg/...')
+                        .setRequired(false)
+                        .setMaxLength(200)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('roblox_link')
+                        .setLabel('Roblox Link (optional)')
+                        .setStyle(TextInputStyle.Short)
+                        .setPlaceholder('https://www.roblox.com/communities/...')
+                        .setRequired(false)
+                        .setMaxLength(200)
+                )
+            );
+
+            await interaction.showModal(modal);
+        } catch (err) {
+            console.error('Error handling verify_create_alliance button:', err);
+        }
+        return;
+    }
+
     // ── Verification Accept ──
     if (interaction.customId.startsWith('verify_accept_')) {
         try {
@@ -1776,6 +1835,174 @@ client.on('interactionCreate', async (interaction) => {
             console.error('Error handling verify_username_modal:', err);
         }
     }
+    // ── Verify + Create Alliance Modal ──
+    if (interaction.customId.startsWith('verify_create_alliance_modal_')) {
+        try {
+            const withoutPrefix = interaction.customId.replace('verify_create_alliance_modal_', '');
+            const firstUnderscore = withoutPrefix.indexOf('_');
+            const userId = withoutPrefix.substring(0, firstUnderscore);
+            const messageId = withoutPrefix.substring(firstUnderscore + 1);
+
+            const allianceName = interaction.fields.getTextInputValue('alliance_name').trim();
+            const teamNum = parseInt(interaction.fields.getTextInputValue('team_number').trim());
+            const discordLink = interaction.fields.getTextInputValue('discord_link')?.trim() || 'N/A';
+            const robloxLink = interaction.fields.getTextInputValue('roblox_link')?.trim() || 'N/A';
+
+            if (isNaN(teamNum) || teamNum < 1 || teamNum > 5) {
+                return await interaction.reply({ content: '❌ Team number must be between 1 and 5.', ephemeral: true });
+            }
+
+            await interaction.deferUpdate();
+
+            const TEAM_CATEGORY_MAP = {
+                1: '1451290397086060705', 2: '1451292986557337761',
+                3: '1451294316000579848', 4: '1536082175475195976',
+                5: '1536082236653178910'
+            };
+            const TEAM_ROLE_MAP_LOCAL = {
+                1: '1536084366080610414', 2: '1536084453234053221',
+                3: '1536084519650598944', 4: '1536084475669254305',
+                5: '1536084576043147385'
+            };
+            const VIEWER_ROLE_ID_LOCAL = '1449021407282593937';
+
+            const guild = await client.guilds.fetch(ALLIANCE_GUILD_ID).catch(() => null);
+            if (!guild) return;
+
+            const member = await guild.members.fetch(userId).catch(() => null);
+            if (!member) return;
+
+            const { findAlliance, saveAlliance } = require('./utils/allianceStorage');
+            const { refreshAllianceList } = require('./utils/refreshAllianceList');
+            const { postTeamLog } = require('./utils/teamLog');
+
+            // Check alliance doesn't already exist
+            const existing = await findAlliance(allianceName).catch(() => null);
+            if (existing) {
+                // Alliance exists — just verify the rep into it
+                await member.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
+                if (existing.repRoleId) await member.roles.add(existing.repRoleId).catch(console.error);
+                if (!existing.theirRepIds.includes(userId)) {
+                    existing.theirRepIds.push(userId);
+                    existing.theirReps = existing.theirRepIds.map(id => `<@${id}>`).join(' ');
+                    existing.markModified('theirRepIds');
+                    existing.markModified('theirReps');
+                    await saveAlliance(existing).catch(console.error);
+                }
+            } else {
+                // Create the alliance
+                const categoryId = TEAM_CATEGORY_MAP[teamNum];
+                const teamRoleId = TEAM_ROLE_MAP_LOCAL[teamNum];
+
+                const theirRole = await guild.roles.create({
+                    name: allianceName,
+                    reason: `Alliance role for ${allianceName} — created via verification`
+                });
+
+                // Fetch team members for our reps
+                await guild.members.fetch();
+                const teamMembers = guild.members.cache.filter(m => m.roles.cache.has(teamRoleId));
+                const ourRepIds = [...teamMembers.values()].map(m => m.id);
+                const ourRepsStr = ourRepIds.map(id => `<@${id}>`).join(' ') || 'N/A';
+
+                // Create channel
+                const channel = await guild.channels.create({
+                    name: allianceName.toLowerCase().replace(/\s+/g, '-'),
+                    type: 0, // GuildText
+                    parent: categoryId,
+                    permissionOverwrites: [
+                        { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                        { id: theirRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+                        { id: teamRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+                        { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+                        { id: VIEWER_ROLE_ID_LOCAL, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks] }
+                    ]
+                });
+
+                // Assign roles to the new rep
+                await member.roles.add(ALLIED_REPS_ROLE_ID).catch(console.error);
+                await member.roles.add(theirRole).catch(console.error);
+
+                // Save alliance
+                await saveAlliance({
+                    groupName: allianceName,
+                    ourReps: ourRepsStr,
+                    theirReps: `<@${userId}>`,
+                    discordLink,
+                    robloxLink,
+                    repRoleId: theirRole.id,
+                    ourRepRoleId: null,
+                    welcomeChannelId: channel.id,
+                    team: teamNum,
+                    strikes: [],
+                    theirRepIds: [userId],
+                    ourRepIds
+                });
+
+                await refreshAllianceList(client);
+
+                // Send welcome message
+                const teamMemberLines = [...teamMembers.values()].map(m => `**• <@${m.id}>**`).join('\n') || '**• TBD**';
+                await channel.send({
+                    content: `:tada: **Welcome New Alliance! | Kavi Café x ${allianceName}** :tada:\n\nWe're thrilled to officially welcome your community into an alliance with Kavi Café! :star2:\n\n:speech_balloon: **Questions & Support**\nIf you have any questions, concerns, or suggestions, this is the perfect place to share them.\n\n:busts_in_silhouette: **Your Representative Pair**\nPlease meet your Kavi Café representatives:\n\n${teamMemberLines}\n\n:handshake: **Looking Ahead**\nWe're so excited to be working together and building a strong relationship.\n\n:coffee::sparkles: Here's to a successful partnership between **Kavi Café** and **${allianceName}**! :sparkles::coffee:`
+                });
+
+                // Team log
+                const createEmbed = new EmbedBuilder()
+                    .setTitle(`✨ New Alliance Created via Verification: ${allianceName}`)
+                    .setColor('Blue')
+                    .addFields(
+                        { name: 'Created By', value: interaction.user.tag, inline: true },
+                        { name: 'First Rep', value: `<@${userId}>`, inline: true },
+                        { name: 'Channel', value: `<#${channel.id}>`, inline: false }
+                    )
+                    .setTimestamp();
+                await postTeamLog(client, teamNum, allianceName, createEmbed);
+
+                // Welcome DM
+                try {
+                    await member.send({
+                        embeds: [new EmbedBuilder()
+                            .setTitle('✅ Verification Accepted!')
+                            .setDescription(`Hey <@${userId}>! 🎉\n\nYour verification has been **accepted** and your alliance **${allianceName}** has been created in the hub!\n\nYou now have access to <#${channel.id}>. Welcome! ☕💜`)
+                            .setColor(0x9B59B6)
+                            .setFooter({ text: 'Kavià Café — Alliance Hub' })
+                            .setTimestamp()]
+                    });
+                } catch {}
+
+                // Update the staff log message
+                await interaction.message.edit({
+                    embeds: [EmbedBuilder.from(interaction.message.embeds[0])
+                        .setTitle('✅ Verification — Accepted + Alliance Created')
+                        .setColor('Green')
+                        .addFields(
+                            { name: 'Alliance Created', value: allianceName, inline: true },
+                            { name: 'Team', value: `Team ${teamNum}`, inline: true },
+                            { name: 'Reviewed By', value: interaction.user.tag, inline: true }
+                        )],
+                    components: []
+                }).catch(console.error);
+
+                // Delete original verification messages
+                const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+                if (verifyChannel) {
+                    const originalMsg = await verifyChannel.messages.fetch(messageId).catch(() => null);
+                    if (originalMsg) await originalMsg.delete().catch(console.error);
+                    const pending = pendingVerifications.get(messageId);
+                    if (pending?.promptMessageId) {
+                        const promptMsg = await verifyChannel.messages.fetch(pending.promptMessageId).catch(() => null);
+                        if (promptMsg) await promptMsg.delete().catch(console.error);
+                    }
+                }
+                pendingVerifications.delete(messageId);
+                return;
+            }
+        } catch (err) {
+            console.error('Error handling verify_create_alliance_modal:', err);
+        }
+    }
+
     if (interaction.customId.startsWith('verify_deny_modal_')) {
         try {
             const withoutPrefix = interaction.customId.replace('verify_deny_modal_', '');

@@ -102,14 +102,13 @@ module.exports = {
             ].filter(line => line !== undefined).join('\n');
 
             const buildTrackingEmbed = (alliances, toposts) => {
-                const sections = ['Restaurants', 'Cafes', 'Others'];
                 const lines = [];
 
-                sections.forEach(section => {
-                    const list = alliances.filter(a => a.section === section);
-                    if (!list.length) return;
+                for (let t = 1; t <= 5; t++) {
+                    const list = alliances.filter(a => a.team === t);
+                    if (!list.length) continue;
 
-                    lines.push(`\n**— ${section} —**`);
+                    lines.push(`\n**— Team ${t} —**`);
                     list.forEach(a => {
                         if (!a.welcomeChannelId) {
                             lines.push(`⚠️ **${a.groupName}** — No channel set`);
@@ -128,7 +127,17 @@ module.exports = {
                             lines.push(`⏳ **${a.groupName}** — Awaiting post`);
                         }
                     });
-                });
+                }
+
+                // Alliances with no team
+                const noTeam = alliances.filter(a => !a.team);
+                if (noTeam.length) {
+                    lines.push(`\n**— No Team —**`);
+                    noTeam.forEach(a => {
+                        const t = toposts.get(`${userId}_${a.welcomeChannelId}`);
+                        lines.push(t?.confirmed ? `✅ **${a.groupName}** — Confirmed` : `⏳ **${a.groupName}** — Awaiting post`);
+                    });
+                }
 
                 return new EmbedBuilder()
                     .setTitle('📢 To Post Tracker')
@@ -280,31 +289,29 @@ module.exports = {
                 if (logChannel) {
                     const trackingMessage = await logChannel.messages.fetch(topost.trackingMessageId).catch(() => null);
                     if (trackingMessage) {
-                        const sections = ['Restaurants', 'Cafes', 'Others'];
                         const lines = [];
-
-                        sections.forEach(section => {
-                            const list = topost.alliances.filter(a => a.section === section);
-                            if (!list.length) return;
-                            lines.push(`\n**— ${section} —**`);
+                        for (let t = 1; t <= 5; t++) {
+                            const list = topost.alliances.filter(a => a.team === t);
+                            if (!list.length) continue;
+                            lines.push(`\n**— Team ${t} —**`);
                             list.forEach(a => {
                                 if (!a.welcomeChannelId) {
                                     lines.push(`⚠️ **${a.groupName}** — No channel set`);
                                     return;
                                 }
                                 const key = `${topost.userId}_${a.welcomeChannelId}`;
-                                const t = activeToposts.get(key);
-                                if (!t || t.confirmed) {
+                                const t2 = activeToposts.get(key);
+                                if (!t2 || t2.confirmed) {
                                     lines.push(`✅ **${a.groupName}** — Confirmed`);
-                                } else if (t.responded) {
+                                } else if (t2.responded) {
                                     lines.push(`🔵 **${a.groupName}** — Awaiting staff review`);
-                                } else if (t.noResponse) {
+                                } else if (t2.noResponse) {
                                     lines.push(`❌ **${a.groupName}** — No response (48hrs)`);
                                 } else {
                                     lines.push(`⏳ **${a.groupName}** — Awaiting post`);
                                 }
                             });
-                        });
+                        }
 
                         await trackingMessage.edit({
                             embeds: [new EmbedBuilder()
@@ -393,6 +400,12 @@ module.exports = {
         if (!member) return;
         if (!member.roles.cache.has(ALLIED_REPS_ROLE_ID)) return;
 
+        // ── Only count as proof if message contains an attachment, embed, or URL ──
+        const hasAttachment = message.attachments.size > 0;
+        const hasEmbed = message.embeds.length > 0;
+        const hasLink = /https?:\/\/\S+/.test(message.content);
+        if (!hasAttachment && !hasEmbed && !hasLink) return;
+
         let matchedKey = null;
         for (const [key, topost] of activeToposts.entries()) {
             if (topost.channelId === message.channel.id && !topost.responded && !topost.confirmed) {
@@ -415,21 +428,25 @@ module.exports = {
                 .setStyle(ButtonStyle.Success)
         );
 
+        // Build proof summary
+        const proofParts = [];
+        if (hasAttachment) proofParts.push(`📎 ${message.attachments.size} attachment(s)`);
+        if (hasEmbed) proofParts.push(`🔗 Embedded link/forward`);
+        if (hasLink && !hasEmbed) proofParts.push(`🔗 Link: ${message.content.match(/https?:\/\/\S+/)?.[0]}`);
+
         await message.channel.send({
-            content: `<@&${STAFF_ROLE_ID}>`,
             embeds: [new EmbedBuilder()
-                .setTitle('📢 To Post — Response Received')
+                .setTitle('📢 To Post — Proof Received')
                 .setColor('Blue')
                 .addFields(
                     { name: 'Alliance', value: topost.groupName, inline: true },
-                    { name: 'Responded By', value: `${message.author.tag}`, inline: true },
-                    { name: 'Message', value: message.content.slice(0, 1024) || 'No text content', inline: false },
+                    { name: 'Submitted By', value: `${message.author.tag}`, inline: true },
+                    { name: 'Proof', value: proofParts.join('\n') || 'See above', inline: false },
                     { name: 'Date', value: new Date().toLocaleString(), inline: false }
                 )
                 .setFooter({ text: 'Only PR Leadership can confirm this response.' })
                 .setTimestamp()],
-            components: [row],
-            allowedMentions: { roles: [STAFF_ROLE_ID] }
+            components: [row]
         });
 
         const logChannel = await client.channels.fetch(CHECKIN_LOG_CHANNEL_ID).catch(() => null);
@@ -440,9 +457,9 @@ module.exports = {
                     .setColor('Blue')
                     .addFields(
                         { name: 'Alliance', value: topost.groupName, inline: true },
-                        { name: 'Responded By', value: `${message.author.tag}`, inline: true },
+                        { name: 'Submitted By', value: `${message.author.tag}`, inline: true },
                         { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
-                        { name: 'Message', value: message.content.slice(0, 1024) || 'No text content', inline: false },
+                        { name: 'Proof', value: proofParts.join('\n') || 'See channel', inline: false },
                         { name: 'Date', value: new Date().toLocaleString(), inline: false }
                     )
                     .setTimestamp()]
