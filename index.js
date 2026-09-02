@@ -1057,16 +1057,18 @@ client.on('interactionCreate', async (interaction) => {
             const secondUnderscore = withoutPrefix.indexOf('_', firstUnderscore + 1);
             const userId = withoutPrefix.substring(0, firstUnderscore);
             const messageId = withoutPrefix.substring(firstUnderscore + 1, secondUnderscore);
-            const allianceName = withoutPrefix.substring(secondUnderscore + 1).replace(/_/g, ' ');
+            const rawAlliancePart = withoutPrefix.substring(secondUnderscore + 1);
+
+            // Detect not-found path before any replace
+            const isNotFound = rawAlliancePart === '__NOT_FOUND__' || rawAlliancePart === '___NOT_FOUND__' || rawAlliancePart.includes('NOT_FOUND');
+            const allianceName = isNotFound ? '__NOT_FOUND__' : rawAlliancePart.replace(/_/g, ' ');
 
             if (interaction.user.id !== userId) {
                 return interaction.reply({ content: '❌ This is not your verification session.', ephemeral: true });
             }
 
-            const isNotFound = allianceName.trim() === '__NOT FOUND__' || allianceName.trim() === '__NOT_FOUND__';
-
             const modal = new ModalBuilder()
-                .setCustomId(`verify_username_modal_${userId}_${messageId}_${allianceName.replace(/\s+/g, '_')}`)
+                .setCustomId(`verify_username_modal_${userId}_${messageId}_${isNotFound ? '__NOT_FOUND__' : allianceName.replace(/\s+/g, '_')}`)
                 .setTitle('Roblox Username Verification');
 
             const modalComponents = [
