@@ -400,11 +400,11 @@ module.exports = {
         if (!member) return;
         if (!member.roles.cache.has(ALLIED_REPS_ROLE_ID)) return;
 
-        // ── Only count as proof if message contains an attachment, embed, or URL ──
+        // ── Only count as proof if message contains an attachment, embed, URL, or forward ──
         const hasAttachment = message.attachments.size > 0;
         const hasEmbed = message.embeds.length > 0;
         const hasLink = /https?:\/\/\S+/.test(message.content);
-        const hasForward = !!(message.messageSnapshots?.size > 0 || message.flags?.has?.('IS_VOICE_MESSAGE') === false && message.type === 'Reply' || message.reference?.messageId || (message.flags?.bitfield & (1 << 14)));
+        const hasForward = !!(message.messageSnapshots?.size > 0 || (message.flags?.bitfield & 16384));
         if (!hasAttachment && !hasEmbed && !hasLink && !hasForward) return;
 
         let matchedKey = null;
