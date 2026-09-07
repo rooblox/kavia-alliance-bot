@@ -404,7 +404,8 @@ module.exports = {
         const hasAttachment = message.attachments.size > 0;
         const hasEmbed = message.embeds.length > 0;
         const hasLink = /https?:\/\/\S+/.test(message.content);
-        if (!hasAttachment && !hasEmbed && !hasLink) return;
+        const hasForward = !!(message.messageSnapshots?.size > 0 || message.flags?.has?.('IS_VOICE_MESSAGE') === false && message.type === 'Reply' || message.reference?.messageId || (message.flags?.bitfield & (1 << 14)));
+        if (!hasAttachment && !hasEmbed && !hasLink && !hasForward) return;
 
         let matchedKey = null;
         for (const [key, topost] of activeToposts.entries()) {
@@ -431,8 +432,9 @@ module.exports = {
         // Build proof summary
         const proofParts = [];
         if (hasAttachment) proofParts.push(`📎 ${message.attachments.size} attachment(s)`);
-        if (hasEmbed) proofParts.push(`🔗 Embedded link/forward`);
-        if (hasLink && !hasEmbed) proofParts.push(`🔗 Link: ${message.content.match(/https?:\/\/\S+/)?.[0]}`);
+        if (hasForward) proofParts.push(`📨 Forwarded message`);
+        if (hasEmbed && !hasForward) proofParts.push(`🔗 Embedded link/forward`);
+        if (hasLink && !hasEmbed && !hasForward) proofParts.push(`🔗 Link: ${message.content.match(/https?:\/\/\S+/)?.[0]}`);
 
         await message.channel.send({
             embeds: [new EmbedBuilder()
