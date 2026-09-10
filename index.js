@@ -788,6 +788,14 @@ client.on('interactionCreate', async (interaction) => {
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isStringSelectMenu()) return;
 
+    if (interaction.customId.startsWith('sendteamlinks_team_') ||
+        interaction.customId.startsWith('sendteamlinks_channel_') ||
+        interaction.customId.startsWith('sendteamlinks_user_')) {
+        const sendTeamLinks = client.commands.get('sendteamlinks');
+        if (sendTeamLinks) await sendTeamLinks.handleSelectMenu(interaction, client);
+        return;
+    }
+
 if (interaction.customId.startsWith('discipline_kick_select_')) {
         const discipline = client.commands.get('alliance-discipline');
         if (discipline) await discipline.handleSelectMenu(interaction, client);
