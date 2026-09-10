@@ -1,7 +1,55 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ChannelSelectMenuBuilder, UserSelectMenuBuilder, ChannelType } = require('discord.js');
-const { loadAlliances, findAlliance } = require('../utils/allianceStorage');
+const { loadAlliances } = require('../utils/allianceStorage');
 
 const activeSendTeamLinks = new Map();
+
+async function buildLinkEmbeds(session) {
+    const alliances = await loadAlliances().catch(() => []);
+
+    let targets = [];
+    if (session.scope === 'alliance') {
+        const found = alliances.find(a => a.groupName === session.allianceName);
+        if (found) targets = [found];
+    } else {
+        targets = alliances.filter(a => a.team === session.team);
+    }
+
+    if (!targets.length) {
+        return [new EmbedBuilder()
+            .setTitle('❌ No Alliances Found')
+            .setDescription('No alliances found for the selected scope.')
+            .setColor('Red')];
+    }
+
+    const title = session.scope === 'team'
+        ? `🔗 Team ${session.team} — Alliance Links`
+        : `🔗 ${targets[0].groupName} — Links`;
+
+    const embeds = [];
+    let currentEmbed = new EmbedBuilder().setTitle(title).setColor(0x9B59B6).setTimestamp();
+    let fieldCount = 0;
+
+    for (const a of targets) {
+        const discordVal = a.discordLink && a.discordLink !== 'N/A' ? `[Join Discord](${a.discordLink})` : 'N/A';
+        const robloxVal = a.robloxLink && a.robloxLink !== 'N/A' ? `[View Group](${a.robloxLink})` : 'N/A';
+
+        if (fieldCount >= 24) {
+            embeds.push(currentEmbed);
+            currentEmbed = new EmbedBuilder().setTitle(`${title} (cont.)`).setColor(0x9B59B6);
+            fieldCount = 0;
+        }
+
+        currentEmbed.addFields({
+            name: `✨ ${a.groupName}`,
+            value: `🎮 **Roblox:** ${robloxVal}\n💬 **Discord:** ${discordVal}`,
+            inline: false
+        });
+        fieldCount++;
+    }
+
+    embeds.push(currentEmbed);
+    return embeds;
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -47,23 +95,20 @@ module.exports = {
         const delivery = interaction.options.getString('delivery');
         const allianceName = interaction.options.getString('alliance_name');
 
-        const sessionId = `${interaction.user.id}_${Date.now()}`;
-
-        // Validate specific alliance was provided
         if (scope === 'alliance' && !allianceName) {
             return await interaction.editReply('❌ Please provide an alliance name when using **Specific Alliance** scope.');
         }
 
-        // Store session
+        const sessionId = `${interaction.user.id}_${Date.now()}`;
         activeSendTeamLinks.set(sessionId, {
             scope,
             delivery,
             allianceName: allianceName || null,
             userId: interaction.user.id,
-            guildId: interaction.guild.id
+            team: null
         });
 
-        // If whole team — show team picker
+        // Whole team — show team picker first
         if (scope === 'team') {
             const teamSelect = new StringSelectMenuBuilder()
                 .setCustomId(`sendteamlinks_team_${sessionId}`)
@@ -86,57 +131,78 @@ module.exports = {
         }
 
         // Specific alliance — go straight to delivery follow-up
-        await handleDeliveryFollowUp(interaction, sessionId, delivery, null, client);
+        await showDeliveryFollowUp(interaction, sessionId, delivery);
     },
 
     async handleSelectMenu(interaction, client) {
+
         // ── Team selection ──
         if (interaction.customId.startsWith('sendteamlinks_team_')) {
+            await interaction.deferUpdate();
             const sessionId = interaction.customId.replace('sendteamlinks_team_', '');
             const session = activeSendTeamLinks.get(sessionId);
-            if (!session) return interaction.update({ content: '❌ Session expired. Please run the command again.', components: [], embeds: [] });
-
+            if (!session) {
+                await interaction.editReply({ content: '❌ Session expired. Please run the command again.', components: [], embeds: [] });
+                return;
+            }
             session.team = parseInt(interaction.values[0]);
-            await interaction.deferUpdate();
-            await handleDeliveryFollowUp(interaction, sessionId, session.delivery, session.team, client);
+            await showDeliveryFollowUp(interaction, sessionId, session.delivery);
             return;
         }
 
         // ── Channel selection ──
         if (interaction.customId.startsWith('sendteamlinks_channel_')) {
+            await interaction.deferUpdate();
             const sessionId = interaction.customId.replace('sendteamlinks_channel_', '');
             const session = activeSendTeamLinks.get(sessionId);
-            if (!session) return interaction.update({ content: '❌ Session expired.', components: [], embeds: [] });
+            if (!session) {
+                await interaction.editReply({ content: '❌ Session expired.', components: [], embeds: [] });
+                return;
+            }
 
             const channelId = interaction.values[0];
             const channel = await client.channels.fetch(channelId).catch(() => null);
-            if (!channel) return interaction.update({ content: '❌ Channel not found.', components: [], embeds: [] });
+            if (!channel) {
+                await interaction.editReply({ content: '❌ Channel not found.', components: [], embeds: [] });
+                return;
+            }
 
-            await interaction.deferUpdate();
-            const embeds = await buildLinkEmbeds(session, client);
+            const embeds = await buildLinkEmbeds(session);
             for (const embed of embeds) await channel.send({ embeds: [embed] }).catch(console.error);
 
             activeSendTeamLinks.delete(sessionId);
-            await interaction.editReply({ embeds: [new EmbedBuilder().setTitle('✅ Sent!').setDescription(`Links sent to <#${channelId}>.`).setColor('Green')], components: [] });
+            await interaction.editReply({
+                embeds: [new EmbedBuilder().setTitle('✅ Sent!').setDescription(`Links sent to <#${channelId}>.`).setColor('Green')],
+                components: []
+            });
             return;
         }
 
-        // ── User selection ──
+        // ── User DM selection ──
         if (interaction.customId.startsWith('sendteamlinks_user_')) {
+            await interaction.deferUpdate();
             const sessionId = interaction.customId.replace('sendteamlinks_user_', '');
             const session = activeSendTeamLinks.get(sessionId);
-            if (!session) return interaction.update({ content: '❌ Session expired.', components: [], embeds: [] });
+            if (!session) {
+                await interaction.editReply({ content: '❌ Session expired.', components: [], embeds: [] });
+                return;
+            }
 
             const targetUserId = interaction.values[0];
             const targetUser = await client.users.fetch(targetUserId).catch(() => null);
-            if (!targetUser) return interaction.update({ content: '❌ User not found.', components: [], embeds: [] });
+            if (!targetUser) {
+                await interaction.editReply({ content: '❌ User not found.', components: [], embeds: [] });
+                return;
+            }
 
-            await interaction.deferUpdate();
-            const embeds = await buildLinkEmbeds(session, client);
+            const embeds = await buildLinkEmbeds(session);
             try {
                 for (const embed of embeds) await targetUser.send({ embeds: [embed] });
                 activeSendTeamLinks.delete(sessionId);
-                await interaction.editReply({ embeds: [new EmbedBuilder().setTitle('✅ Sent!').setDescription(`Links sent to **${targetUser.tag}**'s DMs.`).setColor('Green')], components: [] });
+                await interaction.editReply({
+                    embeds: [new EmbedBuilder().setTitle('✅ Sent!').setDescription(`Links sent to **${targetUser.tag}**'s DMs.`).setColor('Green')],
+                    components: []
+                });
             } catch {
                 await interaction.editReply({ content: '❌ Could not DM that user — they may have DMs disabled.', embeds: [], components: [] });
             }
@@ -147,17 +213,24 @@ module.exports = {
     activeSendTeamLinks
 };
 
-async function handleDeliveryFollowUp(interaction, sessionId, delivery, team, client) {
+async function showDeliveryFollowUp(interaction, sessionId, delivery) {
     const session = activeSendTeamLinks.get(sessionId);
 
     if (delivery === 'my_dms') {
-        const embeds = await buildLinkEmbeds(session, client);
+        const embeds = await buildLinkEmbeds(session);
         try {
             for (const embed of embeds) await interaction.user.send({ embeds: [embed] });
             activeSendTeamLinks.delete(sessionId);
-            await interaction.editReply({ embeds: [new EmbedBuilder().setTitle('✅ Sent!').setDescription('Links sent to your DMs.').setColor('Green')], components: [] });
+            await interaction.editReply({
+                embeds: [new EmbedBuilder().setTitle('✅ Sent!').setDescription('Links sent to your DMs. 📩').setColor('Green')],
+                components: []
+            });
         } catch {
-            await interaction.editReply({ content: '❌ Could not DM you — please enable DMs from server members.', embeds: [], components: [] });
+            await interaction.editReply({
+                content: '❌ Could not DM you — please enable DMs from server members.',
+                embeds: [],
+                components: []
+            });
         }
         return;
     }
@@ -196,57 +269,4 @@ async function handleDeliveryFollowUp(interaction, sessionId, delivery, team, cl
         });
         return;
     }
-}
-
-async function buildLinkEmbeds(session, client) {
-    const { loadAlliances, findAlliance } = require('../utils/allianceStorage');
-    const alliances = await loadAlliances().catch(() => []);
-
-    let targets = [];
-    if (session.scope === 'alliance') {
-        const found = alliances.find(a => a.groupName === session.allianceName);
-        if (found) targets = [found];
-    } else {
-        targets = alliances.filter(a => a.team === session.team);
-    }
-
-    if (!targets.length) {
-        return [new EmbedBuilder()
-            .setTitle('❌ No Alliances Found')
-            .setDescription('No alliances found for the selected scope.')
-            .setColor('Red')];
-    }
-
-    const embeds = [];
-    const title = session.scope === 'team'
-        ? `🔗 Team ${session.team} — Alliance Links`
-        : `🔗 ${targets[0].groupName} — Links`;
-
-    // Build one embed (chunk if too many fields)
-    let currentEmbed = new EmbedBuilder()
-        .setTitle(title)
-        .setColor(0x9B59B6)
-        .setTimestamp();
-
-    let fieldCount = 0;
-    for (const a of targets) {
-        const discordVal = a.discordLink && a.discordLink !== 'N/A' ? `[Join Discord](${a.discordLink})` : 'N/A';
-        const robloxVal = a.robloxLink && a.robloxLink !== 'N/A' ? `[View Group](${a.robloxLink})` : 'N/A';
-
-        if (fieldCount >= 24) {
-            embeds.push(currentEmbed);
-            currentEmbed = new EmbedBuilder().setTitle(`${title} (cont.)`).setColor(0x9B59B6);
-            fieldCount = 0;
-        }
-
-        currentEmbed.addFields({
-            name: `✨ ${a.groupName}`,
-            value: `🎮 **Roblox:** ${robloxVal}\n💬 **Discord:** ${discordVal}`,
-            inline: false
-        });
-        fieldCount++;
-    }
-
-    embeds.push(currentEmbed);
-    return embeds;
 }

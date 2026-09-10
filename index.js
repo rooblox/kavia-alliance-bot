@@ -786,11 +786,19 @@ client.on('interactionCreate', async (interaction) => {
 
 // Handle select menus
 client.on('interactionCreate', async (interaction) => {
+    // Route channel and user select menus for sendteamlinks
+    if (interaction.isChannelSelectMenu() || interaction.isUserSelectMenu()) {
+        if (interaction.customId.startsWith('sendteamlinks_channel_') ||
+            interaction.customId.startsWith('sendteamlinks_user_')) {
+            const sendTeamLinks = client.commands.get('sendteamlinks');
+            if (sendTeamLinks) await sendTeamLinks.handleSelectMenu(interaction, client);
+        }
+        return;
+    }
+
     if (!interaction.isStringSelectMenu()) return;
 
-    if (interaction.customId.startsWith('sendteamlinks_team_') ||
-        interaction.customId.startsWith('sendteamlinks_channel_') ||
-        interaction.customId.startsWith('sendteamlinks_user_')) {
+    if (interaction.customId.startsWith('sendteamlinks_team_')) {
         const sendTeamLinks = client.commands.get('sendteamlinks');
         if (sendTeamLinks) await sendTeamLinks.handleSelectMenu(interaction, client);
         return;
