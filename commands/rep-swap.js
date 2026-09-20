@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { findAlliance, saveAlliance, loadAlliances } = require('../utils/allianceStorage');
 const { postTeamLog } = require('../utils/teamLog');
+const { stats } = require('../utils/weeklyStats');
 
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 
@@ -92,6 +93,7 @@ module.exports = {
             )
             .setTimestamp();
         await postTeamLog(client, alliance.team, groupName, swapEmbed);
+        stats.repStruck(interaction.user.tag); // counts as staff action
 
         await interaction.editReply(`✅ Swapped <@${oldRep.id}> → <@${newRep.id}> for **${groupName}**. Roles updated and alliance record saved.`);
     }

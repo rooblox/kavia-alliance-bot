@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { loadAlliances } = require('../utils/allianceStorage');
+const { stats } = require('../utils/weeklyStats');
 
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 const LOG_CHANNEL_ID = '1482430133561196625';
@@ -158,6 +159,7 @@ module.exports = {
             }
 
             await interaction.editReply(`✅ Message sent to **${sent}** alliance(s)${failed > 0 ? `\n⚠️ Failed for: ${failedAlliances.join(', ')}` : ''}`);
+            stats.sendallMessage();
         }
 
         // ── Poll Modal ──
@@ -290,6 +292,7 @@ module.exports = {
             }
 
             await interaction.editReply(`✅ Poll sent to **${sent}** alliance(s)! Duration: **${durationLabel}**${failed > 0 ? `\n⚠️ Failed for: ${failedAlliances.join(', ')}` : ''}`);
+            stats.sendallPoll();
         }
     },
 

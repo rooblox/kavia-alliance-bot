@@ -2,6 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits } = 
 const { findAlliance, saveAlliance } = require('../utils/allianceStorage');
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
 const { postTeamLog } = require('../utils/teamLog');
+const { stats } = require('../utils/weeklyStats');
 
 const TEAM_CATEGORY_MAP = {
     1: '1451290397086060705',
@@ -212,6 +213,7 @@ We're so excited to be working together and building a strong relationship.
             });
 
             await refreshAllianceList(client);
+            stats.allianceAdded(interaction.user.tag);
             await interaction.editReply(
                 `✅ Alliance **${groupName}** successfully set up under **Team ${team}**!\n\n` +
                 `• Channel: <#${channel.id}>\n` +

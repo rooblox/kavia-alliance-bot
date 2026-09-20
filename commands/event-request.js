@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { loadAlliances, findAlliance } = require('../utils/allianceStorage');
+const { stats } = require('../utils/weeklyStats');
 
 const LOG_CHANNEL_ID = '1514798629037281390';
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
@@ -276,6 +277,7 @@ module.exports = {
             }
 
             await interaction.editReply(`✅ Event request sent to **${allianceName}**! Reminders scheduled for 1 day and 2 hours before the event.`);
+            stats.eventRequest(interaction.user.tag);
         }
 
         // ── Reschedule Modal ──

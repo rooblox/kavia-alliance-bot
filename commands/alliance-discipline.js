@@ -3,6 +3,7 @@ const { findAlliance, saveAlliance, deleteAlliance, loadAlliances } = require('.
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
 const { DisciplinePending, BlacklistedUser } = require('../db');
 const { postTeamLog } = require('../utils/teamLog');
+const { stats } = require('../utils/weeklyStats');
 
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 const TERMINATED_CATEGORY_ID = '1428837884252786819';
@@ -331,6 +332,12 @@ module.exports = {
                     )
                     .setTimestamp();
                 await postTeamLog(client, alliance.team, groupName, strikeEmbed);
+
+                // Weekly stats
+                const theirRepIds = alliance.theirRepIds || [];
+                for (let i = 0; i < theirRepIds.length; i++) {
+                    stats.repStruck(interaction.user.tag);
+                }
             }
 
             if (action === 'remove-strike') {
@@ -599,4 +606,13 @@ async function proceedWithTermination(client, groupName, kickIds, actionLabel, a
         )
         .setTimestamp();
     await postTeamLog(client, alliance.team, groupName, termEmbed);
+
+    // Weekly stats
+    for (const repId of kickIds) {
+        if (action === 'blacklist') stats.repBlacklisted(staffName);
+        else stats.repTerminated(staffName);
+    }
+    if (action === 'blacklist' || action === 'termination') {
+        stats.allianceRemoved(staffName);
+    }
 }

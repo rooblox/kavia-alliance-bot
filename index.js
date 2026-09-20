@@ -651,6 +651,10 @@ client.once('ready', async () => {
         } catch (err) {
             console.error('Scheduler error:', err);
         }
+
+        // Weekly stats report check
+        checkWeeklyReport(client);
+
     }, 60 * 1000);
 
     // ── One-time team roster message on startup ──
@@ -714,8 +718,14 @@ client.on('guildCreate', async (guild) => {
 });
 
 // Welcome message
+const { stats, checkWeeklyReport } = require('./utils/weeklyStats');
+
 client.on('guildMemberAdd', async (member) => {
     if (member.guild.id !== ALLIANCE_GUILD_ID) return;
+
+    // Weekly stats
+    stats.memberJoined();
+
     const channel = await client.channels.fetch(WELCOME_CHANNEL_ID).catch(() => null);
     if (!channel) return;
 
@@ -737,6 +747,11 @@ client.on('guildMemberAdd', async (member) => {
         .setTimestamp();
 
     await channel.send({ content: `<@${member.id}>`, embeds: [embed] });
+});
+
+client.on('guildMemberRemove', (member) => {
+    if (member.guild.id !== ALLIANCE_GUILD_ID) return;
+    stats.memberLeft();
 });
 
 // Role restriction + command handler
@@ -1354,6 +1369,7 @@ client.on('interactionCreate', async (interaction) => {
                         )
                         .setTimestamp();
                     await postTeamLog(client, alliance.team, allianceName, verifyEmbed);
+                    stats.repVerified(interaction.user.tag);
                 }
 
                 pendingVerifications.delete(messageId);
@@ -2100,6 +2116,11 @@ client.on('interactionCreate', async (interaction) => {
 // Handle messages
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
+
+    // Track hub messages for weekly stats
+    if (message.guild?.id === ALLIANCE_GUILD_ID) {
+        stats.hubMessage(message.author.id);
+    }
 
     if (message.guild?.id === ALLIANCE_GUILD_ID && message.channel.id === VERIFICATION_CHANNEL_ID) {
         try {

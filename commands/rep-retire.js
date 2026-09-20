@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { loadAlliances, findAlliance, saveAlliance } = require('../utils/allianceStorage');
 const { postTeamLog } = require('../utils/teamLog');
+const { stats } = require('../utils/weeklyStats');
 
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 const LOG_CHANNEL_ID = '1462580398935642144';
@@ -65,6 +66,7 @@ module.exports = {
                     )
                     .setTimestamp();
                 await postTeamLog(client, alliance.team, alliance.groupName, retireEmbed);
+                stats.repTerminated(interaction.user.tag);
 
                 // Notify the alliance channel
                 if (alliance.welcomeChannelId) {
