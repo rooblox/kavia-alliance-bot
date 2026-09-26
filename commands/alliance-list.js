@@ -15,15 +15,19 @@ module.exports = {
             const alliances = await loadAlliances();
             if (!alliances.length) return await interaction.editReply('No alliances found.');
 
-            const sections = ['Restaurants', 'Cafes', 'Others'];
             const formatted = [];
-            sections.forEach(section => {
-                const list = alliances.filter(a => a.section === section);
+            for (let t = 1; t <= 5; t++) {
+                const list = alliances.filter(a => a.team === t);
                 if (list.length) {
-                    formatted.push({ type: 'header', section });
+                    formatted.push({ type: 'header', team: t });
                     list.forEach(a => formatted.push({ type: 'alliance', data: a }));
                 }
-            });
+            }
+            const noTeam = alliances.filter(a => !a.team);
+            if (noTeam.length) {
+                formatted.push({ type: 'header', team: 0 });
+                noTeam.forEach(a => formatted.push({ type: 'alliance', data: a }));
+            }
 
             let page = 0;
             const totalPages = Math.ceil(formatted.length / ITEMS_PER_PAGE);
@@ -38,7 +42,8 @@ module.exports = {
                 const pageItems = formatted.slice(p * ITEMS_PER_PAGE, (p + 1) * ITEMS_PER_PAGE);
                 pageItems.forEach(item => {
                     if (item.type === 'header') {
-                        embed.addFields({ name: `🗂️ **${item.section}**`, value: '──────────────', inline: false });
+                        const label = item.team === 0 ? 'No Team Assigned' : `Team ${item.team}`;
+                        embed.addFields({ name: `👥 **${label}**`, value: '──────────────', inline: false });
                     } else {
                         const a = item.data;
                         embed.addFields({
