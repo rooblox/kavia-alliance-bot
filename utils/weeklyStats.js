@@ -60,7 +60,10 @@ const stats = {
     eventRequest: (staffTag) => { inc('eventRequests'); if (staffTag) incStaff(staffTag); },
     memberJoined: () => inc('membersJoined'),
     memberLeft: () => inc('membersLeft'),
-    hubMessage: (userId) => incMemberMessage(userId)
+    hubMessage: (userId) => incMemberMessage(userId),
+    // Expose raw snapshots for pay system message count access
+    _getCurrentRaw: () => current,
+    _getLastRaw: () => last
 };
 
 // ── Comparison helper ──

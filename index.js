@@ -1716,6 +1716,19 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    // ── Pay system buttons ──
+    if (interaction.customId.startsWith('pay_override_') ||
+        interaction.customId.startsWith('pay_loa_') ||
+        interaction.customId.startsWith('pay_deduction_') ||
+        interaction.customId === 'pay_finalize' ||
+        interaction.customId === 'pay_mark_paid' ||
+        interaction.customId === 'pay_mark_paid_confirm' ||
+        interaction.customId === 'pay_mark_paid_cancel') {
+        const payCalc = client.commands.get('pay-calculate');
+        if (payCalc) await payCalc.handleButton(interaction, client);
+        return;
+    }
+
     const starttraining = client.commands.get('starttraining');
     if (starttraining) await starttraining.handleButton(interaction, client);
 });
@@ -2053,6 +2066,13 @@ client.on('interactionCreate', async (interaction) => {
         } catch (err) {
             console.error('Error handling verify_create_alliance_modal:', err);
         }
+    }
+
+    // ── Pay system modals ──
+    if (interaction.customId.startsWith('pay_override_modal_') ||
+        interaction.customId.startsWith('pay_deduction_modal_')) {
+        const payCalc = client.commands.get('pay-calculate');
+        if (payCalc) await payCalc.handleModal(interaction, client);
     }
 
     if (interaction.customId.startsWith('verify_deny_modal_')) {
