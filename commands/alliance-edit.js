@@ -59,6 +59,9 @@ module.exports = {
             option.setName('roblox_link')
                 .setDescription('Updated Roblox link'))
         .addStringOption(option =>
+            option.setName('alliance_server_link')
+                .setDescription('Updated alliance server link (team members only)'))
+        .addStringOption(option =>
             option.setName('group_name_new')
                 .setDescription('Rename the alliance'))
         .addIntegerOption(option =>
@@ -96,6 +99,7 @@ module.exports = {
             const welcomeChannel = interaction.options.getChannel('welcome_channel');
             const discordLink = interaction.options.getString('discord_link');
             const robloxLink = interaction.options.getString('roblox_link');
+            const allianceServerLink = interaction.options.getString('alliance_server_link');
             const newGroupName = interaction.options.getString('group_name_new');
             const newTeam = interaction.options.getInteger('team');
 
@@ -190,6 +194,10 @@ module.exports = {
                 alliance.robloxLink = robloxLink;
                 alliance.markModified('robloxLink');
             }
+            if (allianceServerLink) {
+                alliance.allianceServerLink = allianceServerLink;
+                alliance.markModified('allianceServerLink');
+            }
 
             // ── Update team ──
             if (newTeam) {
@@ -267,6 +275,7 @@ module.exports = {
             if (ourRep1 || ourRep2) changesArr.push(`Our reps updated`);
             if (discordLink) changesArr.push(`Discord link updated`);
             if (robloxLink) changesArr.push(`Roblox link updated`);
+            if (allianceServerLink) changesArr.push(`Alliance server link updated`);
             if (newTeam) changesArr.push(`Moved to Team ${newTeam}`);
             if (newGroupName) changesArr.push(`Renamed to ${newGroupName}`);
             if (changesArr.length > 0) {

@@ -18,6 +18,7 @@ const allianceSchema = new mongoose.Schema({
     theirReps: { type: String, default: 'N/A' },
     discordLink: { type: String, default: 'N/A' },
     robloxLink: { type: String, default: 'N/A' },
+    allianceServerLink: { type: String, default: 'N/A' },
     repRoleId: { type: String, default: null },
     ourRepRoleId: { type: String, default: null },
     welcomeChannelId: { type: String, default: null },
@@ -38,7 +39,7 @@ const allianceSchema = new mongoose.Schema({
             removedOn: String
         }
     ],
- notes: [
+    notes: [
         {
             number: Number,
             text: String,

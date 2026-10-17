@@ -2,7 +2,6 @@ const { SlashCommandBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits } = 
 const { findAlliance, saveAlliance } = require('../utils/allianceStorage');
 const { refreshAllianceList } = require('../utils/refreshAllianceList');
 const { postTeamLog } = require('../utils/teamLog');
-const { stats } = require('../utils/weeklyStats');
 
 const TEAM_CATEGORY_MAP = {
     1: '1451290397086060705',
@@ -55,7 +54,10 @@ module.exports = {
                 .setDescription('Discord link of the alliance'))
         .addStringOption(option =>
             option.setName('roblox_link')
-                .setDescription('Roblox link of the alliance')),
+                .setDescription('Roblox link of the alliance'))
+        .addStringOption(option =>
+            option.setName('alliance_server_link')
+                .setDescription('Their alliance server link (team members only)')),
 
     async execute(interaction, client) {
         await interaction.deferReply({ ephemeral: true });
@@ -65,6 +67,7 @@ module.exports = {
             const team = interaction.options.getInteger('team');
             const discordLink = interaction.options.getString('discord_link') || 'N/A';
             const robloxLink = interaction.options.getString('roblox_link') || 'N/A';
+            const allianceServerLink = interaction.options.getString('alliance_server_link') || 'N/A';
             const theirRep1 = interaction.options.getMember('their_rep_1');
             const theirRep2 = interaction.options.getMember('their_rep_2');
 
@@ -185,6 +188,7 @@ We're so excited to be working together and building a strong relationship.
                     { name: 'Our Reps (Team)', value: ourRepsStr },
                     { name: 'Discord Link', value: discordLink },
                     { name: 'Roblox Link', value: robloxLink },
+                    { name: 'Alliance Server Link', value: allianceServerLink },
                     { name: 'Channel', value: `<#${channel.id}>` },
                     { name: 'Their Role', value: `<@&${theirRole.id}>` },
                     { name: 'Added By', value: interaction.user.tag }
@@ -203,6 +207,7 @@ We're so excited to be working together and building a strong relationship.
                 theirReps: theirRepsStr,
                 discordLink,
                 robloxLink,
+                allianceServerLink,
                 repRoleId: theirRole.id,
                 ourRepRoleId: null,
                 welcomeChannelId: channel.id,
@@ -213,7 +218,6 @@ We're so excited to be working together and building a strong relationship.
             });
 
             await refreshAllianceList(client);
-            stats.allianceAdded(interaction.user.tag);
             await interaction.editReply(
                 `✅ Alliance **${groupName}** successfully set up under **Team ${team}**!\n\n` +
                 `• Channel: <#${channel.id}>\n` +

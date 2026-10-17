@@ -3,7 +3,21 @@ const { loadAlliances } = require('../utils/allianceStorage');
 
 const activeSendTeamLinks = new Map();
 
-async function buildLinkEmbeds(session) {
+// Role IDs that count as "team member" — all 5 team roles + leadership/viewer role
+const TEAM_MEMBER_ROLE_IDS = new Set([
+    '1536084366080610414', // Team 1
+    '1536084453234053221', // Team 2
+    '1536084519650598944', // Team 3
+    '1536084475669254305', // Team 4
+    '1536084576043147385', // Team 5
+    '1449021407282593937'  // Leadership / Viewer
+]);
+
+function isTeamMember(member) {
+    return member.roles.cache.some(r => TEAM_MEMBER_ROLE_IDS.has(r.id));
+}
+
+async function buildLinkEmbeds(session, showServerLink = false) {
     const alliances = await loadAlliances().catch(() => []);
 
     let targets = [];
@@ -32,6 +46,7 @@ async function buildLinkEmbeds(session) {
     for (const a of targets) {
         const discordVal = a.discordLink && a.discordLink !== 'N/A' ? `[Join Discord](${a.discordLink})` : 'N/A';
         const robloxVal = a.robloxLink && a.robloxLink !== 'N/A' ? `[View Group](${a.robloxLink})` : 'N/A';
+        const serverVal = a.allianceServerLink && a.allianceServerLink !== 'N/A' ? `[Alliance Server](${a.allianceServerLink})` : 'N/A';
 
         if (fieldCount >= 24) {
             embeds.push(currentEmbed);
@@ -39,9 +54,17 @@ async function buildLinkEmbeds(session) {
             fieldCount = 0;
         }
 
+        const valueLines = [
+            `🎮 **Roblox:** ${robloxVal}`,
+            `💬 **Discord:** ${discordVal}`
+        ];
+        if (showServerLink) {
+            valueLines.push(`🏰 **Alliance Server:** ${serverVal}`);
+        }
+
         currentEmbed.addFields({
             name: `✨ ${a.groupName}`,
-            value: `🎮 **Roblox:** ${robloxVal}\n💬 **Discord:** ${discordVal}`,
+            value: valueLines.join('\n'),
             inline: false
         });
         fieldCount++;
@@ -99,13 +122,18 @@ module.exports = {
             return await interaction.editReply('❌ Please provide an alliance name when using **Specific Alliance** scope.');
         }
 
+        // Check if requester is a team member (determines whether alliance server link is shown)
+        const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+        const showServerLink = member ? isTeamMember(member) : false;
+
         const sessionId = `${interaction.user.id}_${Date.now()}`;
         activeSendTeamLinks.set(sessionId, {
             scope,
             delivery,
             allianceName: allianceName || null,
             userId: interaction.user.id,
-            team: null
+            team: null,
+            showServerLink
         });
 
         // Whole team — show team picker first
@@ -167,7 +195,7 @@ module.exports = {
                 return;
             }
 
-            const embeds = await buildLinkEmbeds(session);
+            const embeds = await buildLinkEmbeds(session, session.showServerLink);
             for (const embed of embeds) await channel.send({ embeds: [embed] }).catch(console.error);
 
             activeSendTeamLinks.delete(sessionId);
@@ -195,7 +223,7 @@ module.exports = {
                 return;
             }
 
-            const embeds = await buildLinkEmbeds(session);
+            const embeds = await buildLinkEmbeds(session, session.showServerLink);
             try {
                 for (const embed of embeds) await targetUser.send({ embeds: [embed] });
                 activeSendTeamLinks.delete(sessionId);
@@ -217,7 +245,7 @@ async function showDeliveryFollowUp(interaction, sessionId, delivery) {
     const session = activeSendTeamLinks.get(sessionId);
 
     if (delivery === 'my_dms') {
-        const embeds = await buildLinkEmbeds(session);
+        const embeds = await buildLinkEmbeds(session, session.showServerLink);
         try {
             for (const embed of embeds) await interaction.user.send({ embeds: [embed] });
             activeSendTeamLinks.delete(sessionId);
