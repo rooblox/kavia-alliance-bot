@@ -123,7 +123,10 @@ module.exports = {
         }
 
         // Check if requester is a team member (determines whether alliance server link is shown)
-        const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+        const member = await interaction.guild.members.fetch({ user: interaction.user.id, force: true }).catch(() => null);
+        console.log('[sendteamlinks] member:', !!member);
+        console.log('[sendteamlinks] roles:', member?.roles?.cache?.map(r => r.id));
+        console.log('[sendteamlinks] showServerLink:', member ? isTeamMember(member) : false);
         const showServerLink = member ? isTeamMember(member) : false;
 
         const sessionId = `${interaction.user.id}_${Date.now()}`;
