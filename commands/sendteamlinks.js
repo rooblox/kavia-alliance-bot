@@ -3,14 +3,19 @@ const { loadAlliances } = require('../utils/allianceStorage');
 
 const activeSendTeamLinks = new Map();
 
-// Role IDs that count as "team member" — all 5 team roles + leadership/viewer role
+// Role IDs that count as "team member" — all 5 team roles + leadership/staff roles
 const TEAM_MEMBER_ROLE_IDS = new Set([
     '1536084366080610414', // Team 1
     '1536084453234053221', // Team 2
     '1536084519650598944', // Team 3
     '1536084475669254305', // Team 4
     '1536084576043147385', // Team 5
-    '1449021407282593937'  // Leadership / Viewer
+    '1449021407282593937', // Leadership / Viewer
+    '1417861483899130007', // Staff bypass
+    '1435434983991939072', // Staff bypass
+    '1417862070308700231', // Staff bypass
+    '1417862149346299967', // Staff bypass
+    '1417862179108950198', // Staff bypass
 ]);
 
 function isTeamMember(member) {
@@ -124,9 +129,6 @@ module.exports = {
 
         // Check if requester is a team member (determines whether alliance server link is shown)
         const member = await interaction.guild.members.fetch({ user: interaction.user.id, force: true }).catch(() => null);
-        console.log('[sendteamlinks] member:', !!member);
-        console.log('[sendteamlinks] roles:', member?.roles?.cache?.map(r => r.id));
-        console.log('[sendteamlinks] showServerLink:', member ? isTeamMember(member) : false);
         const showServerLink = member ? isTeamMember(member) : false;
 
         const sessionId = `${interaction.user.id}_${Date.now()}`;
