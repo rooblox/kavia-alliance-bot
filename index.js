@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const { Client, Collection, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
-const { connectDB, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule } = require('./db');
+const { connectDB, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule, TopostSession } = require('./db');
 
 const ALLOWED_ROLE_ID = '1485100238715883720';
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -229,6 +229,38 @@ client.once('ready', async () => {
         console.log(`✅ Reloaded ${pendingStrikes.length} pending strike(s) from MongoDB`);
     } catch (err) {
         console.error('❌ Failed to reload pending strikes:', err);
+    }
+
+    try {
+        const topostSessions = await TopostSession.find({});
+        const topostCmd = client.commands.get('topost');
+        if (topostCmd?.activeToposts) {
+            const { loadAlliances } = require('./utils/allianceStorage');
+            const alliances = await loadAlliances().catch(() => []);
+            for (const doc of topostSessions) {
+                // Skip sessions older than 48 hours — they've already expired
+                const age = Date.now() - doc.startedAt;
+                if (age >= 48 * 60 * 60 * 1000) {
+                    await TopostSession.deleteOne({ key: doc.key }).catch(() => {});
+                    continue;
+                }
+                topostCmd.activeToposts.set(doc.key, {
+                    groupName: doc.groupName,
+                    channelId: doc.channelId,
+                    userId: doc.userId,
+                    responded: doc.responded,
+                    confirmed: doc.confirmed,
+                    noResponse: doc.noResponse,
+                    reminder24Sent: doc.reminder24Sent,
+                    startedAt: doc.startedAt,
+                    trackingMessageId: doc.trackingMessageId || null,
+                    alliances // re-fetched fresh so tracking embed still works
+                });
+            }
+            console.log(`✅ Reloaded ${topostCmd.activeToposts.size} active topost session(s) from MongoDB`);
+        }
+    } catch (err) {
+        console.error('❌ Failed to reload topost sessions:', err);
     }
 
     for (const guild of client.guilds.cache.values()) {
@@ -577,6 +609,12 @@ client.once('ready', async () => {
 
                         if (elapsed >= HOUR_24 && !t.reminder24Sent) {
                             t.reminder24Sent = true;
+                            // Persist the updated reminder24Sent flag
+                            await TopostSession.findOneAndUpdate(
+                                { key },
+                                { reminder24Sent: true },
+                                { new: true }
+                            ).catch(() => {});
                             try {
                                 const ch = await client.channels.fetch(t.channelId).catch(() => null);
                                 if (ch) {
@@ -640,6 +678,7 @@ client.once('ready', async () => {
                                 console.error('Failed to send topost 48hr deadline:', err);
                             }
                             topostCmd.activeToposts.delete(key);
+                            await TopostSession.deleteOne({ key }).catch(() => {});
                         }
                     }
                 }
@@ -667,7 +706,6 @@ client.once('ready', async () => {
             5: '1536084576043147385'
         };
         const ROSTER_CHANNEL_ID = '1417981861178904677';
-        const ROSTER_FLAG_KEY = 'teamRosterPosted_v1';
 
         // Use a simple in-memory flag so it only posts once per process start
         if (!client._teamRosterPosted) {

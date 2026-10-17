@@ -112,6 +112,22 @@ const blacklistedUserSchema = new mongoose.Schema({
     addedAt: { type: Date, default: Date.now }
 });
 
+// Persists active /topost sessions across bot restarts.
+// The full `alliances` array is intentionally NOT stored — it's re-fetched on reload.
+const topostSessionSchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true }, // `${userId}_${channelId}`
+    groupName: { type: String, required: true },
+    channelId: { type: String, required: true },
+    userId: { type: String, required: true },
+    responded: { type: Boolean, default: false },
+    confirmed: { type: Boolean, default: false },
+    noResponse: { type: Boolean, default: false },
+    reminder24Sent: { type: Boolean, default: false },
+    startedAt: { type: Number, required: true }, // Date.now() timestamp
+    trackingMessageId: { type: String, default: null },
+    createdAt: { type: Date, default: Date.now }
+});
+
 const Alliance = mongoose.models.Alliance || mongoose.model('Alliance', allianceSchema);
 const AllianceListMessage = mongoose.models.AllianceListMessage || mongoose.model('AllianceListMessage', allianceListMessageSchema);
 const DisciplinePending = mongoose.models.DisciplinePending || mongoose.model('DisciplinePending', disciplinePendingSchema);
@@ -119,5 +135,6 @@ const StrikePending = mongoose.models.StrikePending || mongoose.model('StrikePen
 const QotdSchedule = mongoose.models.QotdSchedule || mongoose.model('QotdSchedule', qotdScheduleSchema);
 const AwarenessSchedule = mongoose.models.AwarenessSchedule || mongoose.model('AwarenessSchedule', awarenessScheduleSchema);
 const BlacklistedUser = mongoose.models.BlacklistedUser || mongoose.model('BlacklistedUser', blacklistedUserSchema);
+const TopostSession = mongoose.models.TopostSession || mongoose.model('TopostSession', topostSessionSchema);
 
-module.exports = { connectDB, Alliance, AllianceListMessage, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule, BlacklistedUser };
+module.exports = { connectDB, Alliance, AllianceListMessage, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule, BlacklistedUser, TopostSession };

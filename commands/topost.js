@@ -1,11 +1,45 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { loadAlliances } = require('../utils/allianceStorage');
+const { TopostSession } = require('../db');
 
 const CHECKIN_LOG_CHANNEL_ID = '1482430133561196625';
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 const STAFF_ROLE_ID = '1485100238715883720';
 
 const activeToposts = new Map();
+
+// ── Persist a single session entry to MongoDB ──
+async function saveSession(key, data) {
+    try {
+        await TopostSession.findOneAndUpdate(
+            { key },
+            {
+                key,
+                groupName: data.groupName,
+                channelId: data.channelId,
+                userId: data.userId,
+                responded: data.responded,
+                confirmed: data.confirmed,
+                noResponse: data.noResponse,
+                reminder24Sent: data.reminder24Sent,
+                startedAt: data.startedAt,
+                trackingMessageId: data.trackingMessageId || null
+            },
+            { upsert: true, new: true }
+        );
+    } catch (err) {
+        console.error('Failed to save topost session to MongoDB:', err);
+    }
+}
+
+// ── Remove a session from MongoDB ──
+async function deleteSession(key) {
+    try {
+        await TopostSession.deleteOne({ key });
+    } catch (err) {
+        console.error('Failed to delete topost session from MongoDB:', err);
+    }
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -195,7 +229,7 @@ module.exports = {
                     }
 
                     const key = `${userId}_${alliance.welcomeChannelId}`;
-                    activeToposts.set(key, {
+                    const sessionData = {
                         groupName: alliance.groupName,
                         channelId: alliance.welcomeChannelId,
                         responded: false,
@@ -206,7 +240,11 @@ module.exports = {
                         trackingMessageId: trackingMessage?.id,
                         userId,
                         alliances
-                    });
+                    };
+                    activeToposts.set(key, sessionData);
+
+                    // Persist to MongoDB (without the alliances array)
+                    await saveSession(key, sessionData);
 
                     sent++;
 
@@ -326,6 +364,7 @@ module.exports = {
             }
 
             activeToposts.delete(matchedKey);
+            await deleteSession(matchedKey);
         }
 
         if (customId.startsWith('topost_cancel_')) {
@@ -419,6 +458,9 @@ module.exports = {
 
         const topost = activeToposts.get(matchedKey);
         topost.responded = true;
+
+        // Persist the updated responded state
+        await saveSession(matchedKey, topost);
 
         await message.react('👀').catch(() => {});
 
