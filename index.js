@@ -857,6 +857,12 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    if (interaction.customId.startsWith('pay_deduction_pick_')) {
+        const payCalc = client.commands.get('pay-calculate');
+        if (payCalc) await payCalc.handleSelectMenu(interaction, client);
+        return;
+    }
+
 if (interaction.customId.startsWith('discipline_kick_select_')) {
         const discipline = client.commands.get('alliance-discipline');
         if (discipline) await discipline.handleSelectMenu(interaction, client);

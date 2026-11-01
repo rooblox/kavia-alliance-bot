@@ -347,31 +347,33 @@ module.exports = {
             return;
         }
 
-        // ── Add deduction ──
+        // ── Add deduction — show template select menu ──
         if (id.startsWith('pay_deduction_')) {
             const userId = id.replace('pay_deduction_', '');
-            const modal = new ModalBuilder()
-                .setCustomId(`pay_deduction_modal_${userId}`)
-                .setTitle('➕ Add Deduction');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('deduction_label')
-                        .setLabel('Reason for deduction')
-                        .setStyle(TextInputStyle.Short)
-                        .setPlaceholder('e.g. Missed monthly quota')
-                        .setRequired(true)
-                ),
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('deduction_amount')
-                        .setLabel('Amount to deduct (R$)')
-                        .setStyle(TextInputStyle.Short)
-                        .setPlaceholder('e.g. 10')
-                        .setRequired(true)
-                )
-            );
-            await interaction.showModal(modal);
+            if (!paySession?.[userId]) {
+                return interaction.reply({ content: '❌ Session expired. Run `/pay-calculate` again.', ephemeral: true });
+            }
+
+            const select = new StringSelectMenuBuilder()
+                .setCustomId(`pay_deduction_pick_${userId}`)
+                .setPlaceholder('Pick a deduction reason...')
+                .addOptions(
+                    { label: 'Missed QOTD (1 week)',          value: 'Missed QOTD (1 week)__5',           description: '−5 R$',  emoji: '📅' },
+                    { label: 'Missed QOTD (2 weeks)',         value: 'Missed QOTD (2 weeks)__10',         description: '−10 R$', emoji: '📅' },
+                    { label: 'Missed QOTD (3+ weeks)',        value: 'Missed QOTD (3+ weeks)__15',        description: '−15 R$', emoji: '📅' },
+                    { label: 'Missed monthly quota',          value: 'Missed monthly quota__10',          description: '−10 R$', emoji: '📋' },
+                    { label: 'Partial quota completion',      value: 'Partial quota completion__5',       description: '−5 R$',  emoji: '📋' },
+                    { label: 'Late checkin submission',       value: 'Late checkin submission__5',        description: '−5 R$',  emoji: '⏰' },
+                    { label: 'Late topost confirmation',      value: 'Late topost confirmation__5',       description: '−5 R$',  emoji: '⏰' },
+                    { label: 'Inactivity / low engagement',   value: 'Inactivity / low engagement__10',  description: '−10 R$', emoji: '💤' },
+                    { label: '✏️ Custom (enter manually)',    value: '__custom__',                        description: 'Type your own reason and amount' }
+                );
+
+            await interaction.reply({
+                content: `Select a deduction reason for **${paySession[userId].displayName}**:`,
+                components: [new ActionRowBuilder().addComponents(select)],
+                ephemeral: true
+            });
             return;
         }
 
@@ -557,6 +559,94 @@ module.exports = {
         if (id === 'pay_mark_paid_cancel') {
             await interaction.update({ content: '❌ Cancelled.', components: [] });
             return;
+        }
+    },
+
+    // ── Deduction template select menu ──
+    async handleSelectMenu(interaction, client) {
+        const id = interaction.customId;
+
+        if (id.startsWith('pay_deduction_pick_')) {
+            const userId = id.replace('pay_deduction_pick_', '');
+            if (!paySession?.[userId]) {
+                return interaction.update({ content: '❌ Session expired.', components: [] });
+            }
+
+            const value = interaction.values[0];
+
+            // Custom path — show modal
+            if (value === '__custom__') {
+                const modal = new ModalBuilder()
+                    .setCustomId(`pay_deduction_modal_${userId}`)
+                    .setTitle('➕ Custom Deduction');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('deduction_label')
+                            .setLabel('Reason for deduction')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. Missed monthly quota')
+                            .setRequired(true)
+                    ),
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('deduction_amount')
+                            .setLabel('Amount to deduct (R$)')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. 10')
+                            .setRequired(true)
+                    )
+                );
+                await interaction.showModal(modal);
+                return;
+            }
+
+            // Template path — value format is "Label__amount"
+            const lastDunder = value.lastIndexOf('__');
+            const label = value.substring(0, lastDunder);
+            const amount = parseInt(value.substring(lastDunder + 2));
+
+            if (isNaN(amount) || amount <= 0) {
+                return interaction.update({ content: '❌ Invalid template.', components: [] });
+            }
+
+            paySession[userId].deductions.push({ label, amount });
+            paySession[userId].finalPay = Math.max(0, paySession[userId].finalPay - amount);
+            if (!paySession[userId].overrideBy) {
+                paySession[userId].overrideBy = interaction.user.tag;
+                paySession[userId].overrideReason = `Deduction added: ${label}`;
+            }
+
+            // Update the review embed — find it in the channel
+            const records = Object.values(paySession);
+            const idx = records.findIndex(r => r.userId === userId);
+
+            // Dismiss the select menu, then update the review message
+            await interaction.update({ content: `✅ Deduction applied: **${label}** (−${amount} R$)`, components: [] });
+
+            // Find and edit the original review message
+            try {
+                const reviewChannel = await client.channels.fetch(REVIEW_LOG_CHANNEL_ID).catch(() => null);
+                if (reviewChannel) {
+                    // Scan recent messages to find the one for this userId
+                    const messages = await reviewChannel.messages.fetch({ limit: 50 }).catch(() => null);
+                    if (messages) {
+                        const reviewMsg = messages.find(m =>
+                            m.author.id === client.user.id &&
+                            m.components?.length > 0 &&
+                            m.components[0]?.components?.some(c => c.customId?.includes(`pay_override_${userId}`))
+                        );
+                        if (reviewMsg) {
+                            await reviewMsg.edit({
+                                embeds: [buildReviewEmbed(paySession[userId], idx, records.length)],
+                                components: [buildReviewButtons(userId, paySession[userId].robloxUsername)]
+                            });
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to update review embed after template deduction:', err);
+            }
         }
     },
 
