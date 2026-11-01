@@ -23,9 +23,12 @@ const DEDUCTION_QOTD_MISSED  = 5;
 const DEDUCTION_QUOTA_MISSED = 10;
 
 // ── In-memory pay session ──
-// paySession = { memberId: { base, deductions: [{label, amount}], finalPay, isLOA, overrideBy, overrideReason, role } }
+// paySession = { memberId: { base, deductions: [{label, amount}], finalPay, isLOA, overrideBy, overrideReason, role, robloxUsername } }
 let paySession = null;
 let paySessionInitiator = null;
+
+// Pending Roblox username DM requests: Map<userId, { reviewChannelId, reviewMessageId }>
+const pendingRobloxRequests = new Map();
 
 // ── QOTD miss counter: scans last 4 weeks of QotdSchedule for a userId ──
 async function countMissedQotd(userId) {
@@ -94,7 +97,8 @@ async function buildMemberRecord(member, guild) {
         isLOA: false,
         overrideBy: null,
         overrideReason: null,
-        msgCount
+        msgCount,
+        robloxUsername: null
     };
 }
 
@@ -128,11 +132,17 @@ function buildReviewEmbed(record, index, total) {
         embed.addFields({ name: '📝 Override Reason', value: record.overrideReason, inline: false });
     }
 
+    embed.addFields({
+        name: '🎮 Roblox Username',
+        value: record.robloxUsername || '*(not yet provided)*',
+        inline: true
+    });
+
     return embed;
 }
 
 // ── Build buttons for a review embed ──
-function buildReviewButtons(userId) {
+function buildReviewButtons(userId, robloxUsername = null) {
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(`pay_override_${userId}`)
@@ -145,7 +155,11 @@ function buildReviewButtons(userId) {
         new ButtonBuilder()
             .setCustomId(`pay_deduction_${userId}`)
             .setLabel('➕ Add Deduction')
-            .setStyle(ButtonStyle.Secondary)
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId(`pay_roblox_${userId}`)
+            .setLabel(robloxUsername ? '🎮 Re-request Username' : '🎮 Request Roblox Username')
+            .setStyle(robloxUsername ? ButtonStyle.Success : ButtonStyle.Primary)
     );
 }
 
@@ -223,7 +237,7 @@ module.exports = {
             const record = records[i];
             await reviewChannel.send({
                 embeds: [buildReviewEmbed(record, i, records.length)],
-                components: [buildReviewButtons(record.userId)]
+                components: [buildReviewButtons(record.userId, record.robloxUsername)]
             });
         }
 
@@ -286,8 +300,50 @@ module.exports = {
             const idx = records.findIndex(r => r.userId === userId);
             await interaction.message.edit({
                 embeds: [buildReviewEmbed(paySession[userId], idx, records.length)],
-                components: [buildReviewButtons(userId)]
+                components: [buildReviewButtons(userId, paySession[userId].robloxUsername)]
             });
+            return;
+        }
+
+        // ── Request Roblox Username via DM ──
+        if (id.startsWith('pay_roblox_')) {
+            const userId = id.replace('pay_roblox_', '');
+            if (!paySession?.[userId]) {
+                return interaction.reply({ content: '❌ Session expired. Run `/pay-calculate` again.', ephemeral: true });
+            }
+
+            try {
+                const user = await client.users.fetch(userId);
+                await user.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('🎮 Roblox Username Needed')
+                        .setDescription(
+                            `Hey <@${userId}>! 👋\n\n` +
+                            `PR Leadership is processing your monthly pay and needs your **Roblox username** so payment can be sent to the right account.\n\n` +
+                            `Please **reply to this DM** with your Roblox username and nothing else.\n\n` +
+                            `*Example:* \`Connor_iRBLX\``
+                        )
+                        .setColor(0x9B59B6)
+                        .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                        .setTimestamp()]
+                });
+
+                // Store the request so we can capture their DM reply
+                pendingRobloxRequests.set(userId, {
+                    reviewChannelId: interaction.channel.id,
+                    reviewMessageId: interaction.message.id
+                });
+
+                await interaction.reply({
+                    content: `✅ DM sent to <@${userId}>! They'll be prompted to reply with their Roblox username. The review card will update automatically once they respond.`,
+                    ephemeral: true
+                });
+            } catch (err) {
+                await interaction.reply({
+                    content: `❌ Couldn't DM <@${userId}> — they may have DMs disabled. You can ask them directly.`,
+                    ephemeral: true
+                });
+            }
             return;
         }
 
@@ -348,7 +404,8 @@ module.exports = {
                         { name: '🏷️ Role', value: record.role, inline: true },
                         { name: '💵 Base Pay', value: `${record.base} R$`, inline: true },
                         { name: '📉 Deductions', value: deductionLines, inline: false },
-                        { name: '✅ Final Pay', value: `**${record.finalPay} R$**`, inline: false }
+                        { name: '✅ Final Pay', value: `**${record.finalPay} R$**`, inline: false },
+                        { name: '🎮 Roblox Username', value: record.robloxUsername || '*(not provided — contact leadership)*', inline: true }
                     )
                     .setDescription(
                         `Hi <@${record.userId}>! Here is your pay breakdown for this month.${manualNote}\n\n` +
@@ -367,7 +424,8 @@ module.exports = {
 
                 const overrideTag = record.overrideBy ? ` [⚠️ Manual Override by ${record.overrideBy}: ${record.overrideReason}]` : '';
                 const loaTag = record.isLOA ? ' [🏖️ LOA — 0 Pay]' : '';
-                logLines.push(`• **${record.displayName}** (${record.role}): **${record.finalPay} R$**${loaTag}${overrideTag}`);
+                const robloxTag = record.robloxUsername ? ` | 🎮 ${record.robloxUsername}` : ' | 🎮 *(no username)*';
+                logLines.push(`• **${record.displayName}** (${record.role}): **${record.finalPay} R$**${loaTag}${overrideTag}${robloxTag}`);
             }
 
             // DM overseer the full list
@@ -502,6 +560,52 @@ module.exports = {
         }
     },
 
+    // ── Called from index.js messageCreate for DM replies to Roblox username requests ──
+    async handleDM(message, client) {
+        const userId = message.author.id;
+        if (!pendingRobloxRequests.has(userId)) return; // not waiting on this user
+        if (!paySession?.[userId]) {
+            pendingRobloxRequests.delete(userId);
+            return;
+        }
+
+        const robloxUsername = message.content.trim();
+        if (!robloxUsername || robloxUsername.length > 50 || robloxUsername.includes('\n')) return;
+
+        // Save it
+        paySession[userId].robloxUsername = robloxUsername;
+        const request = pendingRobloxRequests.get(userId);
+        pendingRobloxRequests.delete(userId);
+
+        // Confirm to the member
+        await message.reply({
+            embeds: [new EmbedBuilder()
+                .setTitle('✅ Roblox Username Saved!')
+                .setDescription(`Got it! Your Roblox username **${robloxUsername}** has been saved for this month's payment. 💜`)
+                .setColor(0x2ECC71)
+                .setFooter({ text: 'Kavià Café — Public Relations Department' })
+                .setTimestamp()]
+        }).catch(() => {});
+
+        // Update the review embed in the log channel
+        try {
+            const reviewChannel = await client.channels.fetch(request.reviewChannelId).catch(() => null);
+            if (reviewChannel) {
+                const reviewMessage = await reviewChannel.messages.fetch(request.reviewMessageId).catch(() => null);
+                if (reviewMessage) {
+                    const records = Object.values(paySession);
+                    const idx = records.findIndex(r => r.userId === userId);
+                    await reviewMessage.edit({
+                        embeds: [buildReviewEmbed(paySession[userId], idx, records.length)],
+                        components: [buildReviewButtons(userId, robloxUsername)]
+                    });
+                }
+            }
+        } catch (err) {
+            console.error('Failed to update review embed with Roblox username:', err);
+        }
+    },
+
     async handleModal(interaction, client) {
         const id = interaction.customId;
 
@@ -529,7 +633,7 @@ module.exports = {
             const idx = records.findIndex(r => r.userId === userId);
             await interaction.message.edit({
                 embeds: [buildReviewEmbed(paySession[userId], idx, records.length)],
-                components: [buildReviewButtons(userId)]
+                components: [buildReviewButtons(userId, paySession[userId].robloxUsername)]
             });
             return;
         }
@@ -560,7 +664,7 @@ module.exports = {
             const idx = records.findIndex(r => r.userId === userId);
             await interaction.message.edit({
                 embeds: [buildReviewEmbed(paySession[userId], idx, records.length)],
-                components: [buildReviewButtons(userId)]
+                components: [buildReviewButtons(userId, paySession[userId].robloxUsername)]
             });
             return;
         }

@@ -2273,6 +2273,10 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
+    // ── Pay system: capture Roblox username replies in DMs ──
+    const payCalc = client.commands.get('pay-calculate');
+    if (payCalc?.handleDM) await payCalc.handleDM(message, client);
+
     const starttraining = client.commands.get('starttraining');
     if (starttraining) await starttraining.handleMessage(message, client);
 });
