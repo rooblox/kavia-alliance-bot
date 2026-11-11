@@ -863,6 +863,18 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    if (interaction.customId.startsWith('training_category_select_')) {
+        const starttraining = client.commands.get('starttraining');
+        if (starttraining) await starttraining.handleSelectMenu(interaction, client);
+        return;
+    }
+
+    if (interaction.customId.startsWith('bt_cat_select_')) {
+        const starttraining = client.commands.get('starttraining');
+        if (starttraining?.handleBotTrainingSelectMenu) await starttraining.handleBotTrainingSelectMenu(interaction, client);
+        return;
+    }
+
 if (interaction.customId.startsWith('discipline_kick_select_')) {
         const discipline = client.commands.get('alliance-discipline');
         if (discipline) await discipline.handleSelectMenu(interaction, client);
@@ -1773,8 +1785,11 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
-    const starttraining = client.commands.get('starttraining');
-    if (starttraining) await starttraining.handleButton(interaction, client);
+    if (interaction.customId.startsWith('training_') || interaction.customId.startsWith('bt_')) {
+        const starttraining = client.commands.get('starttraining');
+        if (starttraining) await starttraining.handleButton(interaction, client);
+        return;
+    }
 });
 
 // Handle modals
