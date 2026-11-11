@@ -113,9 +113,8 @@ const blacklistedUserSchema = new mongoose.Schema({
 });
 
 // Persists active /topost sessions across bot restarts.
-// The full `alliances` array is intentionally NOT stored — it's re-fetched on reload.
 const topostSessionSchema = new mongoose.Schema({
-    key: { type: String, required: true, unique: true }, // `${userId}_${channelId}`
+    key: { type: String, required: true, unique: true },
     groupName: { type: String, required: true },
     channelId: { type: String, required: true },
     userId: { type: String, required: true },
@@ -123,18 +122,38 @@ const topostSessionSchema = new mongoose.Schema({
     confirmed: { type: Boolean, default: false },
     noResponse: { type: Boolean, default: false },
     reminder24Sent: { type: Boolean, default: false },
-    startedAt: { type: Number, required: true }, // Date.now() timestamp
+    startedAt: { type: Number, required: true },
     trackingMessageId: { type: String, default: null },
     createdAt: { type: Date, default: Date.now }
 });
 
-const Alliance = mongoose.models.Alliance || mongoose.model('Alliance', allianceSchema);
-const AllianceListMessage = mongoose.models.AllianceListMessage || mongoose.model('AllianceListMessage', allianceListMessageSchema);
-const DisciplinePending = mongoose.models.DisciplinePending || mongoose.model('DisciplinePending', disciplinePendingSchema);
-const StrikePending = mongoose.models.StrikePending || mongoose.model('StrikePending', strikePendingSchema);
-const QotdSchedule = mongoose.models.QotdSchedule || mongoose.model('QotdSchedule', qotdScheduleSchema);
-const AwarenessSchedule = mongoose.models.AwarenessSchedule || mongoose.model('AwarenessSchedule', awarenessScheduleSchema);
-const BlacklistedUser = mongoose.models.BlacklistedUser || mongoose.model('BlacklistedUser', blacklistedUserSchema);
-const TopostSession = mongoose.models.TopostSession || mongoose.model('TopostSession', topostSessionSchema);
+// Tracks who has been sent a training invite DM — so we never ask again
+const trainingInviteSchema = new mongoose.Schema({
+    userId: { type: String, required: true, unique: true },
+    sentAt: { type: Date, default: Date.now },
+    response: { type: String, enum: ['yes', 'no', 'pending'], default: 'pending' },
+    respondedAt: { type: Date, default: null }
+});
 
-module.exports = { connectDB, Alliance, AllianceListMessage, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule, BlacklistedUser, TopostSession };
+const Alliance            = mongoose.models.Alliance            || mongoose.model('Alliance', allianceSchema);
+const AllianceListMessage = mongoose.models.AllianceListMessage || mongoose.model('AllianceListMessage', allianceListMessageSchema);
+const DisciplinePending   = mongoose.models.DisciplinePending   || mongoose.model('DisciplinePending', disciplinePendingSchema);
+const StrikePending       = mongoose.models.StrikePending       || mongoose.model('StrikePending', strikePendingSchema);
+const QotdSchedule        = mongoose.models.QotdSchedule        || mongoose.model('QotdSchedule', qotdScheduleSchema);
+const AwarenessSchedule   = mongoose.models.AwarenessSchedule   || mongoose.model('AwarenessSchedule', awarenessScheduleSchema);
+const BlacklistedUser     = mongoose.models.BlacklistedUser     || mongoose.model('BlacklistedUser', blacklistedUserSchema);
+const TopostSession       = mongoose.models.TopostSession       || mongoose.model('TopostSession', topostSessionSchema);
+const TrainingInvite      = mongoose.models.TrainingInvite      || mongoose.model('TrainingInvite', trainingInviteSchema);
+
+module.exports = {
+    connectDB,
+    Alliance,
+    AllianceListMessage,
+    DisciplinePending,
+    StrikePending,
+    QotdSchedule,
+    AwarenessSchedule,
+    BlacklistedUser,
+    TopostSession,
+    TrainingInvite
+};

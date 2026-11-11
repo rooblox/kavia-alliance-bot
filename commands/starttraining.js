@@ -686,38 +686,52 @@ const TRAININGS = {
     }
 };
 
-const activeSessions  = new Map();
-const helpMessages    = new Map();
+const activeSessions   = new Map();
+const helpMessages     = new Map();
 const ageVerifyPending = new Map();
-// bot training: channelId → session
 const botTrainingSessions = new Map();
 
 // ── Slash command ─────────────────────────────────────────────────────────────
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('starttraining')
-        .setDescription('Start a training session for a user')
-        .addStringOption(option =>
-            option.setName('training')
-                .setDescription('Select the training session')
-                .setRequired(true)
-                .addChoices(
-                    { name: 'Basic Training', value: 'basic_training' },
-                    { name: 'Intro to Mentorship', value: 'intro_to_mentorship' },
-                    { name: 'Alliance Bot Training', value: 'bot_training' }
-                ))
-        .addUserOption(option =>
-            option.setName('member')
-                .setDescription('The user to train')
-                .setRequired(true))
-        .addBooleanOption(option =>
-            option.setName('include_quiz')
-                .setDescription('Include a quiz at the end of bot training? (default: yes)')
-                .setRequired(false)),
+        .setDescription('Training commands')
+        .addSubcommand(sub =>
+            sub.setName('start')
+                .setDescription('Start a training session for a user')
+                .addStringOption(option =>
+                    option.setName('training')
+                        .setDescription('Select the training session')
+                        .setRequired(true)
+                        .addChoices(
+                            { name: 'Basic Training', value: 'basic_training' },
+                            { name: 'Intro to Mentorship', value: 'intro_to_mentorship' },
+                            { name: 'Alliance Bot Training', value: 'bot_training' }
+                        ))
+                .addUserOption(option =>
+                    option.setName('member')
+                        .setDescription('The user to train')
+                        .setRequired(true))
+                .addBooleanOption(option =>
+                    option.setName('include_quiz')
+                        .setDescription('Include a quiz at the end of bot training? (default: yes)')
+                        .setRequired(false)))
+        .addSubcommand(sub =>
+            sub.setName('blast')
+                .setDescription('DM all staff asking if they want to go through training (one-time only)')),
 
     async execute(interaction, client) {
         await interaction.deferReply({ ephemeral: true });
 
+        const sub = interaction.options.getSubcommand();
+
+        // ── BLAST subcommand ──
+        if (sub === 'blast') {
+            await handleBlast(interaction, client);
+            return;
+        }
+
+        // ── START subcommand ──
         const trainingKey = interaction.options.getString('training');
         const user        = interaction.options.getUser('member');
         const includeQuiz = interaction.options.getBoolean('include_quiz') ?? true;
@@ -787,6 +801,74 @@ module.exports = {
         // ── Bot training buttons ──
         if (customId.startsWith('bt_')) {
             await handleBotTrainingButton(interaction, client);
+            return;
+        }
+
+        // ── Blast DM Yes ──
+        if (customId.startsWith('blast_yes_')) {
+            const userId = customId.replace('blast_yes_', '');
+            if (interaction.user.id !== userId) {
+                return interaction.reply({ content: '❌ This DM is not for you.', ephemeral: true });
+            }
+
+            const { TrainingInvite } = require('./db');
+            await TrainingInvite.findOneAndUpdate({ userId }, { response: 'yes', respondedAt: new Date() });
+
+            await interaction.update({
+                embeds: [new EmbedBuilder()
+                    .setTitle('✅ Training Started!')
+                    .setColor(0x2ECC71)
+                    .setDescription('Awesome! Head to the alliance hub server — a private training channel is being created for you now. 💜')
+                    .setTimestamp()],
+                components: []
+            });
+
+            // Find the guild and kick off bot training for them
+            const guild = client.guilds.cache.find(g => g.id === ALLIANCE_GUILD_ID) || client.guilds.cache.first();
+            if (!guild) return;
+
+            const member = await guild.members.fetch(userId).catch(() => null);
+            if (!member) return;
+
+            // Create a fake "interaction-like" object so we can reuse createBotTrainingChannel
+            const fakeInteraction = {
+                guild,
+                user: { id: userId },
+                channel: null,
+                editReply: async () => {},
+                followUp: async () => {}
+            };
+
+            const pending = {
+                trainerId:   userId,
+                traineeId:   userId,
+                traineeName: member.displayName || member.user.username,
+                includeQuiz: true,
+                guild
+            };
+
+            await createBotTrainingChannel(fakeInteraction, client, pending, Object.keys(BOT_CATEGORIES));
+            return;
+        }
+
+        // ── Blast DM No ──
+        if (customId.startsWith('blast_no_')) {
+            const userId = customId.replace('blast_no_', '');
+            if (interaction.user.id !== userId) {
+                return interaction.reply({ content: '❌ This DM is not for you.', ephemeral: true });
+            }
+
+            const { TrainingInvite } = require('./db');
+            await TrainingInvite.findOneAndUpdate({ userId }, { response: 'no', respondedAt: new Date() });
+
+            await interaction.update({
+                embeds: [new EmbedBuilder()
+                    .setTitle('No Problem!')
+                    .setColor(0x95A5A6)
+                    .setDescription('No worries — you won\'t be asked again. If you ever want to go through training, just ask a member of leadership to run `/starttraining start` for you. ☕')
+                    .setTimestamp()],
+                components: []
+            });
             return;
         }
 
@@ -1302,6 +1384,96 @@ module.exports.activeSessions   = activeSessions;
 module.exports.helpMessages     = helpMessages;
 module.exports.ageVerifyPending = ageVerifyPending;
 module.exports.botTrainingSessions = botTrainingSessions;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BLAST — one-time DM to all staff
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function handleBlast(interaction, client) {
+    const { TrainingInvite } = require('./db');
+    const guild = interaction.guild;
+    const staffRole = guild.roles.cache.get(TRAINING_ROLE_ID)
+        || await guild.roles.fetch(TRAINING_ROLE_ID).catch(() => null);
+
+    if (!staffRole) {
+        return interaction.editReply('❌ Could not find the staff role. Check `TRAINING_ROLE_ID`.');
+    }
+
+    // Fetch all members with the role
+    await guild.members.fetch();
+    const staffMembers = staffRole.members.filter(m => !m.user.bot);
+
+    if (staffMembers.size === 0) {
+        return interaction.editReply('❌ No staff members found with that role.');
+    }
+
+    // Load everyone already invited
+    const alreadyInvited = new Set(
+        (await TrainingInvite.find({}, 'userId').lean()).map(r => r.userId)
+    );
+
+    const toSend  = staffMembers.filter(m => !alreadyInvited.has(m.id));
+    const skipped = staffMembers.size - toSend.size;
+
+    if (toSend.size === 0) {
+        return interaction.editReply(`✅ All **${staffMembers.size}** staff members have already been invited. Nobody new to DM.`);
+    }
+
+    await interaction.editReply(`⏳ Sending DMs to **${toSend.size}** staff member${toSend.size !== 1 ? 's' : ''}${skipped > 0 ? ` (skipping ${skipped} already invited)` : ''}...`);
+
+    let sent = 0, failed = 0;
+
+    for (const [, member] of toSend) {
+        try {
+            const embed = new EmbedBuilder()
+                .setTitle('☕ Kavià Café — Staff Training')
+                .setColor(0x9B59B6)
+                .setDescription(
+                    `Hey **${member.displayName}**! 👋\n\n` +
+                    `We're reaching out to let you know that the **Alliance Bot Training** is now available for all staff!\n\n` +
+                    `This training covers everything about the alliance bot — from verification and topost to pay and discipline — with a live sandbox where you can practice the full alliance setup.\n\n` +
+                    `**Would you like to go through training?**\n\n` +
+                    `> ✅ **Yes** — A private training channel will be created for you right away.\n` +
+                    `> ❌ **No** — No worries, you won't be asked again.\n\n` +
+                    `*You can always run \`/starttraining start\` later if you change your mind.*`
+                )
+                .setFooter({ text: 'Kavià Alliance Bot • Training System' })
+                .setTimestamp();
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`blast_yes_${member.id}`)
+                    .setLabel('✅ Yes, start my training!')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId(`blast_no_${member.id}`)
+                    .setLabel('❌ No thanks')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+            await member.send({ embeds: [embed], components: [row] });
+
+            // Record in MongoDB that we've invited them
+            await TrainingInvite.findOneAndUpdate(
+                { userId: member.id },
+                { userId: member.id, sentAt: new Date(), response: 'pending' },
+                { upsert: true, new: true }
+            );
+
+            sent++;
+            // Small delay to avoid rate limits
+            await new Promise(r => setTimeout(r, 500));
+        } catch {
+            failed++;
+        }
+    }
+
+    await interaction.editReply(
+        `✅ Done! Sent to **${sent}** staff member${sent !== 1 ? 's' : ''}` +
+        (failed > 0 ? ` • ❌ **${failed}** couldn't be DM'd (DMs closed)` : '') +
+        (skipped > 0 ? ` • ⏭️ **${skipped}** already invited` : '')
+    );
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // BOT TRAINING — channel-based logic

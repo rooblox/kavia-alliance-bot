@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const { Client, Collection, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
-const { connectDB, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule, TopostSession } = require('./db');
+const { connectDB, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule, TopostSession, TrainingInvite } = require('./db');
 
 const ALLOWED_ROLE_ID = '1485100238715883720';
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -1785,7 +1785,8 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
-    if (interaction.customId.startsWith('training_') || interaction.customId.startsWith('bt_')) {
+    if (interaction.customId.startsWith('training_') || interaction.customId.startsWith('bt_') ||
+        interaction.customId.startsWith('blast_yes_') || interaction.customId.startsWith('blast_no_')) {
         const starttraining = client.commands.get('starttraining');
         if (starttraining) await starttraining.handleButton(interaction, client);
         return;
