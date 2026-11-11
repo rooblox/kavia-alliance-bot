@@ -423,54 +423,105 @@ const BOT_CATEGORIES = {
     }
 };
 
-// Bot training quiz questions
-const BOT_TRAINING_QUESTIONS = [
-    {
-        question: 'What command do you run to start the weekly posting cycle for all alliances?',
-        options: ['A) /checkin', 'B) /topost', 'C) /alliance-list-post', 'D) /sendall'],
-        answer: 'b'
-    },
-    {
-        question: 'An alliance rep sends a message in #verification. What does the bot do first?',
-        options: ['A) DMs the rep', 'B) Reacts with ⏳ and runs checks', 'C) Creates their channel immediately', 'D) Pings leadership'],
-        answer: 'b'
-    },
-    {
-        question: 'Where is alliance data stored so it survives bot restarts?',
-        options: ['A) In-memory only', 'B) A local JSON file', 'C) MongoDB', 'D) Google Sheets'],
-        answer: 'c'
-    },
-    {
-        question: 'An alliance hasn\'t responded to topost after 48 hours. What happens?',
-        options: ['A) They are automatically struck', 'B) They are auto-marked ❌ Not Posted', 'C) The cycle resets', 'D) Nothing — staff must handle it manually'],
-        answer: 'b'
-    },
-    {
-        question: 'What is the difference between "their reps" and "our reps"?',
-        options: [
-            'A) They are the same thing',
-            'B) Their reps = alliance\'s own reps in hub; Our reps = Kavià team members assigned to them',
-            'C) Our reps = alliance\'s reps; Their reps = Kavià team members',
-            'D) Their reps are in the main server; Our reps are in the hub'
-        ],
-        answer: 'b'
-    },
-    {
-        question: 'When is a terminated alliance\'s channel deleted?',
-        options: ['A) Immediately', 'B) After 24 hours', 'C) It is never deleted — it moves to the Terminated category', 'D) After leadership approves'],
-        answer: 'c'
-    },
-    {
-        question: 'Which command checks the bot\'s health and MongoDB connection?',
-        options: ['A) /status', 'B) /ping', 'C) /health-check', 'D) /debug'],
-        answer: 'c'
-    },
-    {
-        question: 'What happens when you click "Add Deduction" on a pay review card?',
-        options: ['A) A modal opens for free-text entry', 'B) The deduction is applied automatically', 'C) A select menu of preset deduction templates appears', 'D) It opens a DM to the staff member'],
-        answer: 'c'
-    }
-];
+// Per-category quiz questions — only questions for selected categories are asked
+const CATEGORY_QUESTIONS = {
+    overview: [
+        {
+            question: 'Where is alliance data stored so it survives bot restarts?',
+            options: ['A) In-memory only', 'B) A local JSON file', 'C) MongoDB', 'D) Google Sheets'],
+            answer: 'c'
+        },
+        {
+            question: 'Which command checks the bot\'s health and MongoDB connection?',
+            options: ['A) /status', 'B) /ping', 'C) /health-check', 'D) /debug'],
+            answer: 'c'
+        }
+    ],
+    alliances: [
+        {
+            question: 'What is the difference between "their reps" and "our reps"?',
+            options: [
+                'A) They are the same thing',
+                'B) Their reps = alliance\'s own reps in hub; Our reps = Kavià team members assigned to them',
+                'C) Our reps = alliance\'s reps; Their reps = Kavià team members',
+                'D) Their reps are in the main server; Our reps are in the hub'
+            ],
+            answer: 'b'
+        },
+        {
+            question: 'When is a terminated alliance\'s channel deleted?',
+            options: ['A) Immediately', 'B) After 24 hours', 'C) It is never deleted — it moves to the Terminated category', 'D) After leadership approves'],
+            answer: 'c'
+        }
+    ],
+    verification: [
+        {
+            question: 'An alliance rep sends a message in #verification. What does the bot do first?',
+            options: ['A) DMs the rep', 'B) Reacts with ⏳ and runs checks', 'C) Creates their channel immediately', 'D) Pings leadership'],
+            answer: 'b'
+        },
+        {
+            question: 'When staff clicks Accept for a NEW alliance (not an existing one), what appears?',
+            options: ['A) The channel is created automatically with no input', 'B) A modal asking for the alliance name and team number', 'C) A DM is sent to the rep immediately', 'D) Nothing — it requires a second confirmation'],
+            answer: 'b'
+        }
+    ],
+    topost: [
+        {
+            question: 'What command do you run to start the weekly posting cycle for all alliances?',
+            options: ['A) /checkin', 'B) /topost', 'C) /alliance-list-post', 'D) /sendall'],
+            answer: 'b'
+        },
+        {
+            question: 'An alliance hasn\'t responded to topost after 48 hours. What happens?',
+            options: ['A) They are automatically struck', 'B) They are auto-marked ❌ Not Posted', 'C) The cycle resets', 'D) Nothing — staff must handle it manually'],
+            answer: 'b'
+        }
+    ],
+    qotd: [
+        {
+            question: 'What timezone do QOTD and Awareness schedules run in?',
+            options: ['A) UTC', 'B) PST', 'C) EST (America/New_York)', 'D) CST'],
+            answer: 'c'
+        },
+        {
+            question: 'If the QOTD schedule seems wrong after a bot restart, what should you do?',
+            options: ['A) Wait for it to fix itself', 'B) Check the MongoDB record via /health-check and re-run the command', 'C) Delete and recreate the schedule in the database manually', 'D) Restart the bot again'],
+            answer: 'b'
+        }
+    ],
+    discipline: [
+        {
+            question: 'What should you do BEFORE issuing a strike to an alliance?',
+            options: ['A) Nothing — strikes can be issued at any time', 'B) Attempt direct communication first', 'C) Terminate the alliance immediately', 'D) Post in the alliance channel without warning'],
+            answer: 'b'
+        },
+        {
+            question: 'After termination, what happens to the alliance channel?',
+            options: ['A) It is deleted immediately', 'B) It stays visible to everyone', 'C) It moves to the Terminated category and is preserved', 'D) It is archived after 7 days'],
+            answer: 'c'
+        }
+    ],
+    pay: [
+        {
+            question: 'What happens when you click "Add Deduction" on a pay review card?',
+            options: ['A) A modal opens for free-text entry', 'B) The deduction is applied automatically', 'C) A select menu of preset deduction templates appears', 'D) It opens a DM to the staff member'],
+            answer: 'c'
+        },
+        {
+            question: 'Pay sessions are stored in which way?',
+            options: ['A) MongoDB — persists through restarts', 'B) In-memory only — lost on bot restart', 'C) Local JSON file', 'D) Google Sheets'],
+            answer: 'b'
+        }
+    ],
+    sandbox: [
+        {
+            question: 'What does the alliance sandbox NOT do?',
+            options: ['A) Create a [SANDBOX] role', 'B) Create a [SANDBOX] channel', 'C) Save the alliance to MongoDB', 'D) Send a welcome message'],
+            answer: 'c'
+        }
+    ]
+};
 
 // ── Existing PR training data ─────────────────────────────────────────────────
 const TRAININGS = {
@@ -734,9 +785,7 @@ module.exports = {
         const customId = interaction.customId;
 
         // ── Bot training buttons ──
-        if (customId.startsWith('bt_next_') || customId.startsWith('bt_prev_') ||
-            customId.startsWith('bt_done_') || customId.startsWith('bt_sandbox_start_') ||
-            customId.startsWith('bt_quiz_') || customId.startsWith('bt_skip_quiz_')) {
+        if (customId.startsWith('bt_')) {
             await handleBotTrainingButton(interaction, client);
             return;
         }
@@ -1348,12 +1397,6 @@ async function handleBotTrainingButton(interaction, client) {
         if (!session) return interaction.reply({ content: '❌ Session expired.', ephemeral: true });
         await interaction.deferUpdate();
 
-        // If we're at the quiz intro stage, start the quiz
-        if (session._quizStarted && session.quizIndex === 0) {
-            await sendBotQuizQuestion(interaction.channel, session);
-            return;
-        }
-
         session.stepIndex++;
         const catKey = session.selectedCategories[session.categoryIndex];
         const steps = BOT_CATEGORIES[catKey]?.getSteps() || [];
@@ -1376,6 +1419,16 @@ async function handleBotTrainingButton(interaction, client) {
         return;
     }
 
+    // ── Start quiz button ──
+    if (id.startsWith('bt_startquiz_')) {
+        const channelId = id.replace('bt_startquiz_', '');
+        const session = botTrainingSessions.get(channelId);
+        if (!session) return interaction.reply({ content: '❌ Session expired.', ephemeral: true });
+        await interaction.deferUpdate();
+        await sendBotQuizQuestion(interaction.channel, session);
+        return;
+    }
+
     // ── Quiz answers ──
     if (id.startsWith('bt_quiz_')) {
         const parts  = id.replace('bt_quiz_', '').split('_');
@@ -1385,7 +1438,8 @@ async function handleBotTrainingButton(interaction, client) {
         if (!session) return interaction.reply({ content: '❌ Session expired.', ephemeral: true });
         await interaction.deferUpdate();
 
-        const q = BOT_TRAINING_QUESTIONS[session.quizIndex];
+        const questions = session._quizQuestions || [];
+        const q = questions[session.quizIndex];
         const correct = answer === q.answer;
         session.quizAnswers.push({ question: q.question, given: answer.toUpperCase(), correct: q.answer.toUpperCase(), passed: correct });
         session.quizIndex++;
@@ -1396,7 +1450,7 @@ async function handleBotTrainingButton(interaction, client) {
                 .setColor(correct ? 'Green' : 'Red')]
         });
 
-        if (session.quizIndex < BOT_TRAINING_QUESTIONS.length) {
+        if (session.quizIndex < questions.length) {
             setTimeout(() => sendBotQuizQuestion(interaction.channel, session), 1000);
         } else {
             await sendBotQuizResults(interaction.channel, session, client);
@@ -1597,13 +1651,25 @@ async function sendBotStep(channel, session) {
     await channel.send({ embeds: [progressEmbed, contentEmbed], components: [row] });
 }
 
+function getSessionQuestions(session) {
+    const questions = [];
+    for (const catKey of session.selectedCategories) {
+        const qs = CATEGORY_QUESTIONS[catKey] || [];
+        questions.push(...qs);
+    }
+    return questions;
+}
+
 async function sendBotQuizOrCompletion(channel, session) {
     if (session.includeQuiz) {
+        const questions = getSessionQuestions(session);
+        session._quizQuestions = questions; // store filtered list on session
+
         const introEmbed = new EmbedBuilder()
             .setTitle('📝 Bot Training Quiz')
             .setDescription(
                 `Great work getting through all the sections! Now let\'s test your knowledge.\n\n` +
-                `You\'ll be asked **${BOT_TRAINING_QUESTIONS.length} questions** about the Alliance Bot.\n\n` +
+                `You\'ll be asked **${questions.length} question${questions.length !== 1 ? 's' : ''}** based on the categories you covered.\n\n` +
                 `Use the A / B / C / D buttons to answer each question.\n\n` +
                 `> You can also skip the quiz if you\'d prefer.`
             )
@@ -1611,26 +1677,24 @@ async function sendBotQuizOrCompletion(channel, session) {
             .setTimestamp();
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`bt_next_${session.id}`).setLabel('▶️ Start Quiz').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId(`bt_startquiz_${session.id}`).setLabel('▶️ Start Quiz').setStyle(ButtonStyle.Success),
             new ButtonBuilder().setCustomId(`bt_skip_quiz_${session.id}`).setLabel('Skip Quiz').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId(`bt_done_${session.id}`).setLabel('🏁 End Training').setStyle(ButtonStyle.Danger)
         );
 
         await channel.send({ embeds: [introEmbed], components: [row] });
-
-        // Override: next button after quiz intro actually starts quiz
-        session.categoryIndex = 999; // flag that we're in quiz mode
-        session._quizStarted = true;
     } else {
         await sendBotCompletion(channel, session);
     }
 }
 
 async function sendBotQuizQuestion(channel, session) {
-    const q = BOT_TRAINING_QUESTIONS[session.quizIndex];
+    const questions = session._quizQuestions || [];
+    const q = questions[session.quizIndex];
+    if (!q) return; // no questions for selected categories
 
     const embed = new EmbedBuilder()
-        .setTitle(`Question ${session.quizIndex + 1} of ${BOT_TRAINING_QUESTIONS.length}`)
+        .setTitle(`Question ${session.quizIndex + 1} of ${questions.length}`)
         .setDescription(`**${q.question}**\n\n${q.options.join('\n')}`)
         .setColor(0x9B59B6)
         .setFooter({ text: 'Select your answer below' })
@@ -1648,8 +1712,8 @@ async function sendBotQuizQuestion(channel, session) {
 
 async function sendBotQuizResults(channel, session, client) {
     const score    = session.quizAnswers.filter(a => a.passed).length;
-    const total    = BOT_TRAINING_QUESTIONS.length;
-    const passed   = score >= Math.ceil(total * 0.75); // 75% to pass
+    const total    = (session._quizQuestions || []).length;
+    const passed   = total === 0 || score >= Math.ceil(total * 0.75); // 75% to pass
 
     const breakdown = session.quizAnswers.map((a, i) =>
         `**Q${i + 1}:** ${a.passed ? '✅' : '❌'} — Answered: **${a.given}** | Correct: **${a.correct}**`
