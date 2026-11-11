@@ -1264,7 +1264,7 @@ async function startBotTrainingSession(interaction, client, user, includeQuiz) {
     // Build the category select
     const { StringSelectMenuBuilder } = require('discord.js');
     const select = new StringSelectMenuBuilder()
-        .setCustomId(`bt_cat_select_${interaction.id}`)
+        .setCustomId(`bt_cat_select_${interaction.user.id}`)
         .setPlaceholder('Select training categories...')
         .setMinValues(1)
         .setMaxValues(Object.keys(BOT_CATEGORIES).length)
@@ -1278,7 +1278,7 @@ async function startBotTrainingSession(interaction, client, user, includeQuiz) {
         );
 
     const everythingBtn = new ButtonBuilder()
-        .setCustomId(`bt_all_${interaction.id}`)
+        .setCustomId(`bt_all_${interaction.user.id}`)
         .setLabel('📚 Train on Everything')
         .setStyle(ButtonStyle.Success);
 
@@ -1294,8 +1294,8 @@ async function startBotTrainingSession(interaction, client, user, includeQuiz) {
         )
         .setFooter({ text: 'Kavià Alliance Bot • Training System' });
 
-    // Store pending with includeQuiz flag
-    botTrainingSessions.set(`pending_${interaction.id}`, {
+    // Store pending with includeQuiz flag — keyed on trainer's user ID so buttons can find it
+    botTrainingSessions.set(`pending_${interaction.user.id}`, {
         trainerId:   interaction.user.id,
         traineeId:   user.id,
         traineeName: user.displayName || user.username,
@@ -1317,10 +1317,10 @@ async function handleBotTrainingButton(interaction, client) {
 
     // ── Everything button ──
     if (id.startsWith('bt_all_')) {
-        const intId = id.replace('bt_all_', '');
-        const pending = botTrainingSessions.get(`pending_${intId}`);
-        if (!pending) return interaction.reply({ content: '❌ Session expired.', ephemeral: true });
-        botTrainingSessions.delete(`pending_${intId}`);
+        const trainerId = id.replace('bt_all_', '');
+        const pending = botTrainingSessions.get(`pending_${trainerId}`);
+        if (!pending) return interaction.reply({ content: '❌ Session expired. Run `/starttraining` again.', ephemeral: true });
+        botTrainingSessions.delete(`pending_${trainerId}`);
         await interaction.deferUpdate();
         await createBotTrainingChannel(interaction, client, pending, Object.keys(BOT_CATEGORIES));
         return;
@@ -1425,10 +1425,10 @@ module.exports.handleBotTrainingSelectMenu = async function(interaction, client)
     const id = interaction.customId;
 
     if (id.startsWith('bt_cat_select_')) {
-        const intId = id.replace('bt_cat_select_', '');
-        const pending = botTrainingSessions.get(`pending_${intId}`);
+        const trainerId = id.replace('bt_cat_select_', '');
+        const pending = botTrainingSessions.get(`pending_${trainerId}`);
         if (!pending) return interaction.reply({ content: '❌ Session expired. Run `/starttraining` again.', ephemeral: true });
-        botTrainingSessions.delete(`pending_${intId}`);
+        botTrainingSessions.delete(`pending_${trainerId}`);
         const selected = interaction.values;
         await interaction.deferUpdate();
         await createBotTrainingChannel(interaction, client, pending, selected);
