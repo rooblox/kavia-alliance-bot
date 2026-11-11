@@ -1260,11 +1260,12 @@ module.exports.botTrainingSessions = botTrainingSessions;
 
 async function startBotTrainingSession(interaction, client, user, includeQuiz) {
     const guild = interaction.guild;
-
-    // Build the category select
     const { StringSelectMenuBuilder } = require('discord.js');
+
+    const trainerId = interaction.user.id;
+
     const select = new StringSelectMenuBuilder()
-        .setCustomId(`bt_cat_select_${interaction.user.id}`)
+        .setCustomId(`bt_cat_select_${trainerId}`)
         .setPlaceholder('Select training categories...')
         .setMinValues(1)
         .setMaxValues(Object.keys(BOT_CATEGORIES).length)
@@ -1278,7 +1279,7 @@ async function startBotTrainingSession(interaction, client, user, includeQuiz) {
         );
 
     const everythingBtn = new ButtonBuilder()
-        .setCustomId(`bt_all_${interaction.user.id}`)
+        .setCustomId(`bt_all_${trainerId}`)
         .setLabel('📚 Train on Everything')
         .setStyle(ButtonStyle.Success);
 
@@ -1294,16 +1295,20 @@ async function startBotTrainingSession(interaction, client, user, includeQuiz) {
         )
         .setFooter({ text: 'Kavià Alliance Bot • Training System' });
 
-    // Store pending with includeQuiz flag — keyed on trainer's user ID so buttons can find it
-    botTrainingSessions.set(`pending_${interaction.user.id}`, {
-        trainerId:   interaction.user.id,
+    // Store pending keyed on trainer's user ID
+    botTrainingSessions.set(`pending_${trainerId}`, {
+        trainerId,
         traineeId:   user.id,
         traineeName: user.displayName || user.username,
         includeQuiz,
         guild
     });
 
-    await interaction.editReply({
+    // Acknowledge the slash command ephemerally, then post the picker publicly so buttons work
+    await interaction.editReply({ content: '✅ Training picker sent below!', embeds: [], components: [] });
+
+    await interaction.channel.send({
+        content: `<@${interaction.user.id}>`,
         embeds: [embed],
         components: [
             new ActionRowBuilder().addComponents(select),
@@ -1321,7 +1326,7 @@ async function handleBotTrainingButton(interaction, client) {
         const pending = botTrainingSessions.get(`pending_${trainerId}`);
         if (!pending) return interaction.reply({ content: '❌ Session expired. Run `/starttraining` again.', ephemeral: true });
         botTrainingSessions.delete(`pending_${trainerId}`);
-        await interaction.deferUpdate();
+        await interaction.update({ content: '⏳ Creating training channel...', components: [], embeds: [] });
         await createBotTrainingChannel(interaction, client, pending, Object.keys(BOT_CATEGORIES));
         return;
     }
@@ -1430,7 +1435,7 @@ module.exports.handleBotTrainingSelectMenu = async function(interaction, client)
         if (!pending) return interaction.reply({ content: '❌ Session expired. Run `/starttraining` again.', ephemeral: true });
         botTrainingSessions.delete(`pending_${trainerId}`);
         const selected = interaction.values;
-        await interaction.deferUpdate();
+        await interaction.update({ content: `⏳ Creating training channel for: ${selected.map(k => BOT_CATEGORIES[k]?.emoji).join(' ')}...`, components: [], embeds: [] });
         await createBotTrainingChannel(interaction, client, pending, selected);
     }
 };
@@ -1512,8 +1517,11 @@ async function createBotTrainingChannel(interaction, client, pending, selectedCa
         embeds: [introEmbed]
     });
 
+    // Update the picker message to show the channel link
     try {
-        await interaction.followUp({ content: `✅ Training channel created: <#${trainingChannel.id}>`, ephemeral: true });
+        await interaction.editReply({ content: `✅ Training channel created: <#${trainingChannel.id}>` }).catch(() =>
+            interaction.channel?.send({ content: `✅ Training channel: <#${trainingChannel.id}>` }).catch(() => {})
+        );
     } catch {}
 
     await sendBotStep(trainingChannel, session, client);
