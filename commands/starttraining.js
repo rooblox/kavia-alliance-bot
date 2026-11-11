@@ -811,7 +811,7 @@ module.exports = {
                 return interaction.reply({ content: '❌ This DM is not for you.', ephemeral: true });
             }
 
-            const { TrainingInvite } = require('./db');
+            const { TrainingInvite } = require('../db');
             await TrainingInvite.findOneAndUpdate({ userId }, { response: 'yes', respondedAt: new Date() });
 
             await interaction.update({
@@ -858,7 +858,7 @@ module.exports = {
                 return interaction.reply({ content: '❌ This DM is not for you.', ephemeral: true });
             }
 
-            const { TrainingInvite } = require('./db');
+            const { TrainingInvite } = require('../db');
             await TrainingInvite.findOneAndUpdate({ userId }, { response: 'no', respondedAt: new Date() });
 
             await interaction.update({
@@ -1390,7 +1390,7 @@ module.exports.botTrainingSessions = botTrainingSessions;
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function handleBlast(interaction, client) {
-    const { TrainingInvite } = require('./db');
+    const { TrainingInvite } = require('../db');
     const guild = interaction.guild;
     const staffRole = guild.roles.cache.get(TRAINING_ROLE_ID)
         || await guild.roles.fetch(TRAINING_ROLE_ID).catch(() => null);
