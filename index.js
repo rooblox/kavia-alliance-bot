@@ -78,11 +78,60 @@ function getBannerDateString() {
 
 function buildBannerEmbed() {
     return new EmbedBuilder()
-        .setTitle('🌴 Kavià | Alliance Hub')
-        .setDescription(`**Welcome to the Kavià Alliance Hub!**\n\nToday is **${getBannerDateString()}**`)
+        .setDescription(
+            `To gain access to this hub, you must verify yourself as an **Allied Representative**.\n` +
+            `Click **✨ Verify Me** below to begin the verification process.`
+        )
         .setImage('attachment://banner.png')
         .setColor(0x9B59B6)
         .setFooter({ text: 'Kavià Café — Public Relations Department' });
+}
+
+function regenerateBanner() {
+    return new Promise((resolve, reject) => {
+        const { execFile } = require('child_process');
+        const path = require('path');
+        const sourcePath = path.join(__dirname, 'banner_source.png');
+        const outPath = path.join(__dirname, 'banner.png');
+
+        const script = `
+from PIL import Image, ImageDraw, ImageFont
+from datetime import datetime, timezone, timedelta
+import sys
+
+et_offset = timedelta(hours=-5)
+now = datetime.now(timezone(et_offset))
+# adjust for DST: rough check — EDT is UTC-4 (Mar-Nov), EST is UTC-5 (Nov-Mar)
+month = now.month
+if 3 <= month <= 11:
+    now = datetime.now(timezone(timedelta(hours=-4)))
+
+days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+months = ['January','February','March','April','May','June','July','August','September','October','November','December']
+day = days[now.weekday()]
+month_name = months[now.month - 1]
+d = now.day
+suffix = 'th' if 11 <= d <= 13 else {1:'st',2:'nd',3:'rd'}.get(d % 10, 'th')
+yr = str(now.year)[-2:]
+date_str = f"{day}, {month_name} {d}{suffix}, '{yr}"
+
+img = Image.open(sys.argv[1]).convert("RGB")
+draw = ImageDraw.Draw(img)
+bw, bh = img.size
+font = ImageFont.truetype('/usr/share/fonts/truetype/google-fonts/Poppins-Bold.ttf', 17)
+bbox = draw.textbbox((0, 0), date_str, font=font)
+tw = bbox[2] - bbox[0]
+x = bw - tw - 18
+y = bh - 28
+draw.text((x+1, y+1), date_str, font=font, fill=(0, 0, 0))
+draw.text((x, y), date_str, font=font, fill=(220, 200, 255))
+img.save(sys.argv[2])
+`;
+        execFile('python3', ['-c', script, sourcePath, outPath], (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
 }
 
 async function ensureBannerMessage(client) {
@@ -110,6 +159,7 @@ async function ensureBannerMessage(client) {
             }
         }
 
+        await regenerateBanner().catch(err => console.error('Banner regen failed:', err));
         const bannerPath = require('path').join(__dirname, 'banner.png');
         const { AttachmentBuilder } = require('discord.js');
         const attachment = new AttachmentBuilder(bannerPath, { name: 'banner.png' });
@@ -135,6 +185,7 @@ function startBannerDailyRefresh(client) {
                 if (channel && bannerMessageId) {
                     const msg = await channel.messages.fetch(bannerMessageId).catch(() => null);
                     if (msg) {
+                        await regenerateBanner().catch(err => console.error('Banner regen failed:', err));
                         const bannerPath = require('path').join(__dirname, 'banner.png');
                         const { AttachmentBuilder } = require('discord.js');
                         const attachment = new AttachmentBuilder(bannerPath, { name: 'banner.png' });
