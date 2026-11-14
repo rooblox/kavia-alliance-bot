@@ -26,6 +26,7 @@ const ALLOWED_GUILD_IDS = [
 
 let verificationWelcomeMessageId = null;
 let bannerMessageId = null;
+let activeVerificationChannelId = '1417865773271224350'; // updated at runtime if new channel created
 const pendingVerifications = new Map();   // messageId → session (old text-based, kept for staff modal logic)
 const verifyProofPending = new Map();     // userId → { sessionKey, allianceName, robloxUsername, robloxUserId, userTag, messageIds[] }
 
@@ -136,7 +137,7 @@ img.save(sys.argv[2])
 
 async function ensureBannerMessage(client) {
     try {
-        const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+        const channel = await client.channels.fetch(activeVerificationChannelId).catch(() => null);
         if (!channel) return;
 
         // Try to find existing banner message
@@ -181,7 +182,7 @@ function startBannerDailyRefresh(client) {
         const msUntil = midnight - now;
         setTimeout(async () => {
             try {
-                const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+                const channel = await client.channels.fetch(activeVerificationChannelId).catch(() => null);
                 if (channel && bannerMessageId) {
                     const msg = await channel.messages.fetch(bannerMessageId).catch(() => null);
                     if (msg) {
@@ -205,16 +206,45 @@ function startBannerDailyRefresh(client) {
 
 async function ensureVerificationWelcome(client) {
     try {
-        const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
-        if (!channel) return;
+        const guild = await client.guilds.fetch(ALLIANCE_GUILD_ID).catch(() => null);
+        if (!guild) return;
 
-        // Check if our welcome message still exists
+        // Try to find an existing bot-managed verification channel
+        await guild.channels.fetch();
+        let channel = guild.channels.cache.find(c =>
+            c.name === 'verify-here' && c.isTextBased()
+        );
+
+        // If not found, create a fresh one
+        if (!channel) {
+            const { ChannelType, PermissionFlagsBits } = require('discord.js');
+            channel = await guild.channels.create({
+                name: 'verify-here',
+                type: ChannelType.GuildText,
+                topic: 'Verify yourself as an Allied Representative to gain access to the hub.',
+                permissionOverwrites: [
+                    {
+                        id: guild.roles.everyone,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
+                    },
+                    {
+                        id: client.user.id,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.AttachFiles],
+                    }
+                ]
+            });
+            console.log(`✅ Created new verification channel: ${channel.id}`);
+        }
+
+        activeVerificationChannelId = channel.id;
+
+        // Check if our welcome message already exists
         if (verificationWelcomeMessageId) {
             const existing = await channel.messages.fetch(verificationWelcomeMessageId).catch(() => null);
             if (existing) return;
         }
 
-        // Scan recent messages for an existing welcome embed from the bot
+        // Scan for existing bot verify embed
         const messages = await channel.messages.fetch({ limit: 20 }).catch(() => null);
         if (messages) {
             const botMsg = messages.find(m =>
@@ -228,7 +258,7 @@ async function ensureVerificationWelcome(client) {
             }
         }
 
-        // Build the fancy welcome embed with a Verify button
+        // Post the verify embed with button
         const welcomeEmbed = new EmbedBuilder()
             .setTitle('💜 Welcome to Kavià | Alliance Hub')
             .setDescription(
@@ -254,9 +284,9 @@ async function ensureVerificationWelcome(client) {
         const msg = await channel.send({ embeds: [welcomeEmbed], components: [verifyButton] });
         await msg.pin().catch(() => {});
         verificationWelcomeMessageId = msg.id;
-        console.log('✅ Verification welcome message posted and pinned');
+        console.log(`✅ Verification welcome message posted in ${channel.id}`);
     } catch (err) {
-        console.error('Failed to post verification welcome:', err);
+        console.error('Failed to set up verification channel:', err);
     }
 }
 
@@ -275,7 +305,7 @@ async function startVerificationReminderLoop(client) {
 
             if (unverifiedMembers.size === 0) return;
 
-            const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+            const channel = await client.channels.fetch(activeVerificationChannelId).catch(() => null);
             if (!channel) return;
 
             for (const [, member] of unverifiedMembers) {
@@ -303,7 +333,7 @@ async function startVerificationReminderLoop(client) {
 // Helper: bulk-delete all non-pinned messages in verification channel from a specific user
 async function cleanVerificationChannelForUser(client, userId) {
     try {
-        const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+        const channel = await client.channels.fetch(activeVerificationChannelId).catch(() => null);
         if (!channel) return;
 
         const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
@@ -721,7 +751,7 @@ client.once('ready', async () => {
                                 `All alliances are required to have **2 representatives** in the hub at all times.\n\n` +
                                 `**What to do:**\n` +
                                 `• Have your second representative join the **Kavià Alliance Hub**\n` +
-                                `• Have them verify in <#${VERIFICATION_CHANNEL_ID}>\n` +
+                                `• Have them verify in <#${activeVerificationChannelId}>\n` +
                                 `• A PR staff member will then assign them the correct roles\n\n` +
                                 `If you have any questions or need assistance, please reach out to **PR Leadership**. 💜\n\n` +
                                 `🔗 [Discord Server](${KAVIA_DISCORD}) • [Roblox Group](${KAVIA_ROBLOX})`
@@ -993,7 +1023,7 @@ client.on('guildMemberAdd', async (member) => {
             `Hey there, <@${member.id}>! We're so glad to have you here. 💜\n\n` +
             `**Kavià Alliance Hub** is the home of our allied representatives and partnerships.\n\n` +
             `**Here's what to do next:**\n` +
-            `• ✅ Head over to <#${VERIFICATION_CHANNEL_ID}> and verify yourself\n` +
+            `• ✅ Head over to <#${activeVerificationChannelId}> and verify yourself\n` +
             `• 👥 Make sure you're an **Allied Representative** — if you're unsure, reach out to a member of PR Leadership\n` +
             `• ⚠️ Please note that members who are not Allied Representatives may be removed\n\n` +
             `If you have any questions, don't hesitate to reach out. We're happy to help!\n\n` +
@@ -1481,7 +1511,7 @@ client.on('interactionCreate', async (interaction) => {
                         .setTitle('❌ Roblox Username Not Found')
                         .setDescription(
                             `We couldn't find a Roblox account with the username **${robloxUsername}**.\n\n` +
-                            `Please post in <#${VERIFICATION_CHANNEL_ID}> again to restart your verification.`
+                            `Please post in <#${activeVerificationChannelId}> again to restart your verification.`
                         )
                         .setColor('Red')
                         .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
@@ -1523,7 +1553,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             // Passed — advance to proof of invite step
-            const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+            const verifyChannel = await client.channels.fetch(activeVerificationChannelId).catch(() => null);
             let stepMsgId = null;
             if (verifyChannel) {
                 const stepMsg = await verifyChannel.send({
@@ -1561,7 +1591,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('✅ Step 2 Complete — Roblox Verified!')
                     .setDescription(
                         `**${robloxUsername}** is now verified in the Kavià Café Roblox group! ✅\n\n` +
-                        `**Head to <#${VERIFICATION_CHANNEL_ID}>** and send your proof of invite to complete verification. 💜`
+                        `**Head to <#${activeVerificationChannelId}>** and send your proof of invite to complete verification. 💜`
                     )
                     .setColor(0x9B59B6)
                     .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
@@ -2161,7 +2191,7 @@ client.on('interactionCreate', async (interaction) => {
                         .setDescription(
                             `It looks like you're not currently in the **main Kavià Café Discord server**.\n\n` +
                             `You must be in our main server to verify as an Allied Representative.\n\n` +
-                            `Once you've joined, please post in <#${VERIFICATION_CHANNEL_ID}> again to restart. 💜`
+                            `Once you've joined, please post in <#${activeVerificationChannelId}> again to restart. 💜`
                         )
                         .setColor('Red')
                         .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
@@ -2193,7 +2223,7 @@ client.on('interactionCreate', async (interaction) => {
                         .setTitle('❌ Roblox Username Not Found')
                         .setDescription(
                             `We couldn't find a Roblox account with the username **${robloxUsername}**.\n\n` +
-                            `Please double-check your username and post in <#${VERIFICATION_CHANNEL_ID}> again to restart. 💜`
+                            `Please double-check your username and post in <#${activeVerificationChannelId}> again to restart. 💜`
                         )
                         .setColor('Red')
                         .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
@@ -2242,7 +2272,7 @@ client.on('interactionCreate', async (interaction) => {
 
             // ── All checks passed — Step 3: Proof of Invite ──
             // Post a message in the verification channel prompting them to upload proof
-            const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+            const verifyChannel = await client.channels.fetch(activeVerificationChannelId).catch(() => null);
             let stepMsgId = null;
             if (verifyChannel) {
                 const stepMsg = await verifyChannel.send({
@@ -2283,7 +2313,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('✅ Step 2 Complete — Roblox Verified!')
                     .setDescription(
                         `Great news! **${robloxUsername}** is verified as a Kavià Café Roblox group member. ✅\n\n` +
-                        `**Head to <#${VERIFICATION_CHANNEL_ID}>** and send your proof of invite (a screenshot or image link) to complete your verification. 💜`
+                        `**Head to <#${activeVerificationChannelId}>** and send your proof of invite (a screenshot or image link) to complete your verification. 💜`
                     )
                     .setColor(0x9B59B6)
                     .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
@@ -2445,7 +2475,7 @@ client.on('interactionCreate', async (interaction) => {
                 }).catch(console.error);
 
                 // Delete original verification messages
-                const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+                const verifyChannel = await client.channels.fetch(activeVerificationChannelId).catch(() => null);
                 if (verifyChannel) {
                     const originalMsg = await verifyChannel.messages.fetch(messageId).catch(() => null);
                     if (originalMsg) await originalMsg.delete().catch(console.error);
@@ -2513,7 +2543,7 @@ client.on('interactionCreate', async (interaction) => {
                             `Hey <@${userId}>,\n\n` +
                             `Unfortunately your verification submission was **denied**.\n\n` +
                             `**Reason:** ${reason}\n\n` +
-                            `Please click the **✨ Verify Me** button in <#${VERIFICATION_CHANNEL_ID}> to restart your verification. 💜`
+                            `Please click the **✨ Verify Me** button in <#${activeVerificationChannelId}> to restart your verification. 💜`
                         )
                         .setColor('Red')
                         .setFooter({ text: 'Kavià Café — Alliance Hub' })
@@ -2540,7 +2570,7 @@ client.on('messageCreate', async (message) => {
 
     // ── Proof-of-invite capture in verification channel ──
     // When a user is in the verifyProofPending Map, their next message with an attachment or link is their proof
-    if (message.guild?.id === ALLIANCE_GUILD_ID && message.channel.id === VERIFICATION_CHANNEL_ID) {
+    if (message.guild?.id === ALLIANCE_GUILD_ID && message.channel.id === activeVerificationChannelId) {
         const proofSession = verifyProofPending.get(message.author.id);
         if (proofSession) {
             const imageUrl = message.attachments.first()?.url || null;
@@ -2551,7 +2581,7 @@ client.on('messageCreate', async (message) => {
                 // Not a valid proof — delete and prompt again
                 await message.delete().catch(() => {});
                 try {
-                    const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+                    const channel = await client.channels.fetch(activeVerificationChannelId).catch(() => null);
                     if (channel) {
                         const warn = await channel.send({
                             content: `<@${message.author.id}> Please attach a **screenshot** or paste an **image link** as your proof of invite. 💜`
@@ -2645,7 +2675,7 @@ client.on('messageCreate', async (message) => {
 
             // Update the step message to show submitted
             if (proofSession.stepMessageId) {
-                const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+                const channel = await client.channels.fetch(activeVerificationChannelId).catch(() => null);
                 if (channel) {
                     const stepMsg = await channel.messages.fetch(proofSession.stepMessageId).catch(() => null);
                     if (stepMsg) {
