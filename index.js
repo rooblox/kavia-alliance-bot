@@ -26,7 +26,7 @@ const ALLOWED_GUILD_IDS = [
 
 let verificationWelcomeMessageId = null;
 let bannerMessageId = null;
-let activeVerificationChannelId = '1417865773271224350'; // updated at runtime if new channel created
+let activeVerificationChannelId = null; // set at runtime by ensureVerificationWelcome
 const pendingVerifications = new Map();   // messageId → session (old text-based, kept for staff modal logic)
 const verifyProofPending = new Map();     // userId → { sessionKey, allianceName, robloxUsername, robloxUserId, userTag, messageIds[] }
 
@@ -1021,7 +1021,7 @@ client.on('guildMemberAdd', async (member) => {
             `Hey there, <@${member.id}>! We're so glad to have you here. 💜\n\n` +
             `**Kavià Alliance Hub** is the home of our allied representatives and partnerships.\n\n` +
             `**Here's what to do next:**\n` +
-            `• ✅ Head over to <#${activeVerificationChannelId}> and verify yourself\n` +
+            `• ✅ Head over to <#${activeVerificationChannelId || (member.guild.channels.cache.find(c => c.name === 'verify-here')?.id) || 'the verification channel'}> and verify yourself\n` +
             `• 👥 Make sure you're an **Allied Representative** — if you're unsure, reach out to a member of PR Leadership\n` +
             `• ⚠️ Please note that members who are not Allied Representatives may be removed\n\n` +
             `If you have any questions, don't hesitate to reach out. We're happy to help!\n\n` +
