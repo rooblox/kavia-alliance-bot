@@ -91,37 +91,48 @@ function buildBannerEmbed() {
 
 async function ensureBannerMessage(client) {
     try {
+        console.log(`🔍 ensureBannerMessage: using channel ${activeVerificationChannelId}`);
         const channel = await client.channels.fetch(activeVerificationChannelId).catch(() => null);
-        if (!channel) return;
-
-        // Try to find existing banner message
-        if (bannerMessageId) {
-            const existing = await channel.messages.fetch(bannerMessageId).catch(() => null);
-            if (existing) return; // already there, daily loop will edit it
+        if (!channel) {
+            console.error(`❌ Banner: could not fetch channel ${activeVerificationChannelId}`);
+            return;
         }
 
+        // Always delete any old imageless banner and repost clean
         const messages = await channel.messages.fetch({ limit: 20 }).catch(() => null);
         if (messages) {
-            const botMsg = messages.find(m =>
+            const oldBanner = messages.find(m =>
                 m.author.id === client.user.id &&
                 m.embeds.length > 0 &&
-                m.embeds[0]?.image != null &&
                 m.components?.length === 0
             );
-            if (botMsg) {
-                bannerMessageId = botMsg.id;
-                console.log('✅ Found existing banner message');
-                return;
+            if (oldBanner) {
+                if (oldBanner.embeds[0]?.image != null) {
+                    // Good — has image, reuse it
+                    bannerMessageId = oldBanner.id;
+                    console.log('✅ Found existing banner with image, reusing');
+                    return;
+                } else {
+                    // No image — delete and repost
+                    console.log('⚠️ Found banner without image, deleting and reposting...');
+                    await oldBanner.delete().catch(() => {});
+                }
             }
         }
 
         const bannerPath = require('path').join(__dirname, 'banner_source.png');
+        const fs = require('fs');
+        if (!fs.existsSync(bannerPath)) {
+            console.error(`❌ Banner: banner_source.png not found at ${bannerPath}`);
+            return;
+        }
+        console.log(`📁 Banner: using file at ${bannerPath}`);
         const { AttachmentBuilder } = require('discord.js');
         const attachment = new AttachmentBuilder(bannerPath, { name: 'banner_source.png' });
         const msg = await channel.send({ embeds: [buildBannerEmbed()], files: [attachment] });
         await msg.pin().catch(() => {});
         bannerMessageId = msg.id;
-        console.log('✅ Banner message posted');
+        console.log(`✅ Banner message posted: ${msg.id}`);
     } catch (err) {
         console.error('Failed to post banner message:', err);
     }
@@ -140,10 +151,30 @@ function startBannerDailyRefresh(client) {
                 if (channel && bannerMessageId) {
                     const msg = await channel.messages.fetch(bannerMessageId).catch(() => null);
                     if (msg) {
+                        const mergedEmbed = new EmbedBuilder()
+                            .setTitle('💜 Welcome to Kavià | Alliance Hub')
+                            .setDescription(
+                                `📅 **${getBannerDateString()}**\n\n` +
+                                `Before you gain access to the hub, you'll need to **verify yourself** as an Allied Representative.\n\n` +
+                                `**What to expect:**\n` +
+                                `> 🤝 Select your alliance from a dropdown\n` +
+                                `> 🎮 Confirm your Roblox username\n` +
+                                `> 📸 Upload proof of your invite\n\n` +
+                                `The whole process takes just a couple of minutes. Once submitted, our PR team will review and approve you. 💜`
+                            )
+                            .setImage('attachment://banner_source.png')
+                            .setColor(0x9B59B6)
+                            .setFooter({ text: 'Kavià Café — Public Relations Department' });
                         const bannerPath = require('path').join(__dirname, 'banner_source.png');
                         const { AttachmentBuilder } = require('discord.js');
                         const attachment = new AttachmentBuilder(bannerPath, { name: 'banner_source.png' });
-                        await msg.edit({ embeds: [buildBannerEmbed()], files: [attachment] });
+                        const verifyButton = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('verify_start')
+                                .setLabel('✨ Verify Me')
+                                .setStyle(ButtonStyle.Primary)
+                        );
+                        await msg.edit({ embeds: [mergedEmbed], files: [attachment], components: [verifyButton] });
                         console.log('✅ Banner date refreshed');
                     }
                 }
@@ -198,41 +229,44 @@ async function ensureVerificationWelcome(client) {
 
         activeVerificationChannelId = channel.id;
 
-        // Check if our welcome message already exists
-        if (verificationWelcomeMessageId) {
-            const existing = await channel.messages.fetch(verificationWelcomeMessageId).catch(() => null);
-            if (existing) return;
-        }
-
-        // Scan for existing bot verify embed
+        // Delete any old split messages (banner without button, or verify without image)
         const messages = await channel.messages.fetch({ limit: 20 }).catch(() => null);
         if (messages) {
-            const botMsg = messages.find(m =>
+            for (const [, m] of messages) {
+                if (m.author.id === client.user.id && !m.pinned) {
+                    await m.delete().catch(() => {});
+                }
+            }
+            // Check if the pinned one is already the merged version
+            const pinned = messages.find(m =>
                 m.author.id === client.user.id &&
                 m.embeds.length > 0 &&
+                m.embeds[0]?.image != null &&
                 m.components?.length > 0
             );
-            if (botMsg) {
-                verificationWelcomeMessageId = botMsg.id;
+            if (pinned) {
+                verificationWelcomeMessageId = pinned.id;
+                bannerMessageId = pinned.id;
+                console.log('✅ Found existing merged verify+banner message');
                 return;
             }
         }
 
-        // Post the verify embed with button
-        const welcomeEmbed = new EmbedBuilder()
+        // Build merged embed: banner image + verify info + button
+        const mergedEmbed = new EmbedBuilder()
             .setTitle('💜 Welcome to Kavià | Alliance Hub')
             .setDescription(
-                `We're so glad you're here! Before you gain access to the hub, you'll need to **verify yourself** as an Allied Representative.\n\n` +
+                `📅 **${getBannerDateString()}**\n\n` +
+                `Before you gain access to the hub, you'll need to **verify yourself** as an Allied Representative.\n\n` +
                 `**What to expect:**\n` +
                 `> 🤝 Select your alliance from a dropdown\n` +
                 `> 🎮 Confirm your Roblox username\n` +
                 `> 📸 Upload proof of your invite\n\n` +
-                `The whole process takes just a couple of minutes. Once submitted, our PR team will review and approve you. 💜\n\n` +
-                `**Click the button below to begin!**`
+                `The whole process takes just a couple of minutes. Once submitted, our PR team will review and approve you. 💜`
             )
+            .setImage('attachment://banner_source.png')
             .setColor(0x9B59B6)
-            .setFooter({ text: 'Kavià Café — Public Relations Department' })
-            .setTimestamp();
+            .setFooter({ text: 'Kavià Café — Public Relations Department' });
 
         const verifyButton = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -241,10 +275,15 @@ async function ensureVerificationWelcome(client) {
                 .setStyle(ButtonStyle.Primary)
         );
 
-        const msg = await channel.send({ embeds: [welcomeEmbed], components: [verifyButton] });
+        const bannerPath = require('path').join(__dirname, 'banner_source.png');
+        const { AttachmentBuilder } = require('discord.js');
+        const attachment = new AttachmentBuilder(bannerPath, { name: 'banner_source.png' });
+
+        const msg = await channel.send({ embeds: [mergedEmbed], files: [attachment], components: [verifyButton] });
         await msg.pin().catch(() => {});
         verificationWelcomeMessageId = msg.id;
-        console.log(`✅ Verification welcome message posted in ${channel.id}`);
+        bannerMessageId = msg.id;
+        console.log(`✅ Merged verify+banner message posted in ${channel.id}`);
     } catch (err) {
         console.error('Failed to set up verification channel:', err);
     }
@@ -474,8 +513,7 @@ client.once('ready', async () => {
         await deployToGuild(guild.id);
     }
 
-    await ensureVerificationWelcome(client);  // creates channel first, sets activeVerificationChannelId
-    await ensureBannerMessage(client);         // then posts banner into that channel
+    await ensureVerificationWelcome(client);  // creates channel, posts merged banner+verify message
     startBannerDailyRefresh(client);
     startVerificationReminderLoop(client);
 
