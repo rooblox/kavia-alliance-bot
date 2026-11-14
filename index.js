@@ -13,6 +13,7 @@ const VERIFICATION_CHANNEL_ID = '1417865773271224350';
 const VERIFICATION_LOG_CHANNEL_ID = '1500612010189127891';
 const ALLIED_REPS_ROLE_ID = '1417866883750957188';
 const ALLIANCE_GUILD_ID = '1385081586285940796';
+const UNVERIFIED_ROLE_ID = '1571285634264604802';
 const KAVIA_DISCORD = 'https://discord.gg/rMtv4smu36';
 const KAVIA_ROBLOX = 'https://www.roblox.com/communities/13827902/Kavi-Cafe#!/about';
 const QOTD_GUILD_ID = '1370892833182974035';
@@ -23,8 +24,10 @@ const ALLOWED_GUILD_IDS = [
     '1370892833182974035'
 ];
 
-let verificationFormatMessageId = null;
-const pendingVerifications = new Map();
+let verificationWelcomeMessageId = null;
+let bannerMessageId = null;
+const pendingVerifications = new Map();   // messageId → session (old text-based, kept for staff modal logic)
+const verifyProofPending = new Map();     // userId → { sessionKey, allianceName, robloxUsername, robloxUserId, userTag, messageIds[] }
 
 const client = new Client({
     intents: [
@@ -58,50 +61,213 @@ async function deployToGuild(guildId) {
     }
 }
 
-async function ensureVerificationFormat(client) {
+function getBannerDateString() {
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+    const day = days[now.getDay()];
+    const month = months[now.getMonth()];
+    const date = now.getDate();
+    const year = String(now.getFullYear()).slice(-2);
+    // ordinal suffix
+    const s = date % 10, t = date % 100;
+    const suffix = (t >= 11 && t <= 13) ? 'th' : (s === 1 ? 'st' : s === 2 ? 'nd' : s === 3 ? 'rd' : 'th');
+    return `${day}, ${month} ${date}${suffix}, '${year}`;
+}
+
+function buildBannerEmbed() {
+    return new EmbedBuilder()
+        .setTitle('🌴 Kavià | Alliance Hub')
+        .setDescription(`**Welcome to the Kavià Alliance Hub!**\n\nToday is **${getBannerDateString()}**`)
+        .setImage('attachment://banner.png')
+        .setColor(0x9B59B6)
+        .setFooter({ text: 'Kavià Café — Public Relations Department' });
+}
+
+async function ensureBannerMessage(client) {
     try {
         const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
         if (!channel) return;
 
-        if (verificationFormatMessageId) {
-            const existing = await channel.messages.fetch(verificationFormatMessageId).catch(() => null);
-            if (existing) return;
+        // Try to find existing banner message
+        if (bannerMessageId) {
+            const existing = await channel.messages.fetch(bannerMessageId).catch(() => null);
+            if (existing) return; // already there, daily loop will edit it
         }
 
         const messages = await channel.messages.fetch({ limit: 20 }).catch(() => null);
         if (messages) {
-            const botMsg = messages.find(m => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0]?.title?.includes('Verification Format'));
+            const botMsg = messages.find(m =>
+                m.author.id === client.user.id &&
+                m.embeds.length > 0 &&
+                m.embeds[0]?.title?.includes('Alliance Hub') &&
+                m.components?.length === 0
+            );
             if (botMsg) {
-                verificationFormatMessageId = botMsg.id;
+                bannerMessageId = botMsg.id;
                 return;
             }
         }
 
-        const formatEmbed = new EmbedBuilder()
-            .setTitle('✅ Alliance Rep Verification Format')
-            .setDescription(
-                `Welcome to **Kavià | Alliance Hub**! 💜\n\n` +
-                `To gain access as an **Allied Representative**, please post your verification using the format below.\n\n` +
-                `**Copy and fill in the following:**\n\n` +
-                `**Discord Username:**\n` +
-                `**Roblox Username:**\n` +
-                `**Group Representing:**\n` +
-                `**Proof of Invite:** *(attach a screenshot or image link)*\n\n` +
-                `Once submitted, a staff member will review your verification and you will be notified via DM. 💜\n\n` +
-                `*Please do not DM staff to ask about your verification status — it will be reviewed as soon as possible.*`
-            )
-            .setColor(0x9B59B6)
-            .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
-            .setTimestamp();
-
-        const msg = await channel.send({ embeds: [formatEmbed] });
-        await msg.pin().catch(err => console.error('Failed to pin verification format message:', err));
-        verificationFormatMessageId = msg.id;
-        console.log('✅ Verification format message posted and pinned');
+        const bannerPath = require('path').join(__dirname, 'banner.png');
+        const { AttachmentBuilder } = require('discord.js');
+        const attachment = new AttachmentBuilder(bannerPath, { name: 'banner.png' });
+        const msg = await channel.send({ embeds: [buildBannerEmbed()], files: [attachment] });
+        await msg.pin().catch(() => {});
+        bannerMessageId = msg.id;
+        console.log('✅ Banner message posted');
     } catch (err) {
-        console.error('Failed to post verification format:', err);
+        console.error('Failed to post banner message:', err);
     }
 }
+
+function startBannerDailyRefresh(client) {
+    const scheduleNextMidnight = () => {
+        const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        const midnight = new Date(now);
+        midnight.setDate(midnight.getDate() + 1);
+        midnight.setHours(0, 0, 5, 0); // 12:00:05 AM ET
+        const msUntil = midnight - now;
+        setTimeout(async () => {
+            try {
+                const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+                if (channel && bannerMessageId) {
+                    const msg = await channel.messages.fetch(bannerMessageId).catch(() => null);
+                    if (msg) {
+                        const bannerPath = require('path').join(__dirname, 'banner.png');
+                        const { AttachmentBuilder } = require('discord.js');
+                        const attachment = new AttachmentBuilder(bannerPath, { name: 'banner.png' });
+                        await msg.edit({ embeds: [buildBannerEmbed()], files: [attachment] });
+                        console.log('✅ Banner date refreshed');
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to refresh banner:', err);
+            }
+            scheduleNextMidnight(); // reschedule for the next day
+        }, msUntil);
+        console.log(`🕛 Banner refresh scheduled in ${Math.round(msUntil / 60000)} minutes`);
+    };
+    scheduleNextMidnight();
+}
+
+async function ensureVerificationWelcome(client) {
+    try {
+        const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+        if (!channel) return;
+
+        // Check if our welcome message still exists
+        if (verificationWelcomeMessageId) {
+            const existing = await channel.messages.fetch(verificationWelcomeMessageId).catch(() => null);
+            if (existing) return;
+        }
+
+        // Scan recent messages for an existing welcome embed from the bot
+        const messages = await channel.messages.fetch({ limit: 20 }).catch(() => null);
+        if (messages) {
+            const botMsg = messages.find(m =>
+                m.author.id === client.user.id &&
+                m.embeds.length > 0 &&
+                m.components?.length > 0
+            );
+            if (botMsg) {
+                verificationWelcomeMessageId = botMsg.id;
+                return;
+            }
+        }
+
+        // Build the fancy welcome embed with a Verify button
+        const welcomeEmbed = new EmbedBuilder()
+            .setTitle('💜 Welcome to Kavià | Alliance Hub')
+            .setDescription(
+                `We're so glad you're here! Before you gain access to the hub, you'll need to **verify yourself** as an Allied Representative.\n\n` +
+                `**What to expect:**\n` +
+                `> 🤝 Select your alliance from a dropdown\n` +
+                `> 🎮 Confirm your Roblox username\n` +
+                `> 📸 Upload proof of your invite\n\n` +
+                `The whole process takes just a couple of minutes. Once submitted, our PR team will review and approve you. 💜\n\n` +
+                `**Click the button below to begin!**`
+            )
+            .setColor(0x9B59B6)
+            .setFooter({ text: 'Kavià Café — Public Relations Department' })
+            .setTimestamp();
+
+        const verifyButton = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('verify_start')
+                .setLabel('✨ Verify Me')
+                .setStyle(ButtonStyle.Primary)
+        );
+
+        const msg = await channel.send({ embeds: [welcomeEmbed], components: [verifyButton] });
+        await msg.pin().catch(() => {});
+        verificationWelcomeMessageId = msg.id;
+        console.log('✅ Verification welcome message posted and pinned');
+    } catch (err) {
+        console.error('Failed to post verification welcome:', err);
+    }
+}
+
+// 24-hour reminder loop — ping unverified members once per day, delete the ping after 30s
+async function startVerificationReminderLoop(client) {
+    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+    const run = async () => {
+        try {
+            const guild = await client.guilds.fetch(ALLIANCE_GUILD_ID).catch(() => null);
+            if (!guild) return;
+
+            await guild.members.fetch();
+            const unverifiedMembers = guild.members.cache.filter(m =>
+                m.roles.cache.has(UNVERIFIED_ROLE_ID) && !m.user.bot
+            );
+
+            if (unverifiedMembers.size === 0) return;
+
+            const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+            if (!channel) return;
+
+            for (const [, member] of unverifiedMembers) {
+                try {
+                    const ping = await channel.send({
+                        content: `👋 Hey <@${member.id}>! Just a friendly reminder — you still haven't completed verification. Click the **✨ Verify Me** button above to get started! 💜`
+                    });
+                    // Delete the ping after 30 seconds to keep the channel clean
+                    setTimeout(() => ping.delete().catch(() => {}), 30_000);
+                } catch (err) {
+                    console.error(`Failed to ping unverified member ${member.id}:`, err);
+                }
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        } catch (err) {
+            console.error('Verification reminder loop error:', err);
+        }
+    };
+
+    // Run once shortly after startup (1 min), then every 24 hours
+    setTimeout(run, 60_000);
+    setInterval(run, TWENTY_FOUR_HOURS);
+}
+
+// Helper: bulk-delete all non-pinned messages in verification channel from a specific user
+async function cleanVerificationChannelForUser(client, userId) {
+    try {
+        const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+        if (!channel) return;
+
+        const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+        if (!messages) return;
+
+        const toDelete = messages.filter(m => m.author.id === userId && !m.pinned);
+        for (const [, msg] of toDelete) {
+            await msg.delete().catch(() => {});
+            await new Promise(r => setTimeout(r, 300));
+        }
+    } catch (err) {
+        console.error(`Failed to clean verify channel for ${userId}:`, err);
+    }
+}
+
 
 async function handleVerificationPass(interaction, client, userId, messageId, allianceName, robloxUsername, robloxUserId, allianceNameClaim = null, invitedBy = null) {
     const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
@@ -267,7 +433,10 @@ client.once('ready', async () => {
         await deployToGuild(guild.id);
     }
 
-    await ensureVerificationFormat(client);
+    await ensureBannerMessage(client);
+    startBannerDailyRefresh(client);
+    await ensureVerificationWelcome(client);
+    startVerificationReminderLoop(client);
 
     // ── Ensure team log channels exist ──
     try {
@@ -785,6 +954,13 @@ client.on('guildMemberAdd', async (member) => {
         .setTimestamp();
 
     await channel.send({ content: `<@${member.id}>`, embeds: [embed] });
+
+    // Assign the unverified role so we can track who hasn't verified
+    try {
+        await member.roles.add(UNVERIFIED_ROLE_ID);
+    } catch (err) {
+        console.error(`Failed to assign unverified role to ${member.id}:`, err);
+    }
 });
 
 client.on('guildMemberRemove', (member) => {
@@ -925,114 +1101,85 @@ if (interaction.customId.startsWith('sendsome_select_')) {
 
   if (interaction.customId.startsWith('verify_alliance_select_')) {
         try {
-            const messageId = interaction.customId.replace('verify_alliance_select_', '');
+            const sessionKey = interaction.customId.replace('verify_alliance_select_', '');
             const selectedAlliance = interaction.values[0];
-            const pending = pendingVerifications.get(messageId);
-
-            if (!pending) {
-                return interaction.update({ content: '❌ This verification session has expired. Please resubmit your verification.', components: [] });
-            }
-
-            pending.selectedAlliance = selectedAlliance;
             const isStaff = selectedAlliance === '__STAFF__';
+            const isNotFound = selectedAlliance === '__NOT_FOUND__';
 
-            // Staff path — skip Roblox checks, go straight to staff log as before
+            // Staff path — go straight to staff log, ask for proof too
             if (isStaff) {
-                await interaction.update({
-                    content: `✅ Got it! You've selected **Staff Member**. Your verification is now being reviewed by staff — you'll be notified via DM once a decision has been made. 💜`,
-                    components: []
-                });
-
-                const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
-                if (!verifyLogChannel) return;
-
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`verify_accept_${pending.userId}_${messageId}`)
-                        .setLabel('✅ Accept')
-                        .setStyle(ButtonStyle.Success),
-                    new ButtonBuilder()
-                        .setCustomId(`verify_deny_${pending.userId}_${messageId}`)
-                        .setLabel('❌ Deny')
-                        .setStyle(ButtonStyle.Danger)
-                );
-
-                const embed = new EmbedBuilder()
-                    .setTitle('📋 New Verification Submission')
-                    .setColor(0x9B59B6)
-                    .addFields(
-                        { name: 'User', value: `<@${pending.userId}> (${pending.userTag})`, inline: true },
-                        { name: 'Submitted At', value: new Date().toLocaleString(), inline: true },
-                        { name: 'Alliance Selected', value: '👤 Staff Member', inline: false },
-                        { name: 'Staff Role', value: `<@&1417981534421520515>`, inline: true },
-                        { name: 'Message Content', value: pending.content || '*No text*', inline: false }
+                // Show Roblox username modal for staff too (they may be in the group)
+                const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+                const modal = new ModalBuilder()
+                    .setCustomId(`verify_username_modal_${interaction.user.id}_${sessionKey}_${selectedAlliance}`)
+                    .setTitle('Staff Verification');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('roblox_username')
+                            .setLabel('Your Roblox Username')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. RobloxUser123')
+                            .setRequired(true)
+                            .setMaxLength(50)
+                    ),
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('staff_role_note')
+                            .setLabel('What role/department are you?')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. PR Staff, Team Lead, etc.')
+                            .setRequired(false)
+                            .setMaxLength(100)
                     )
-                    .setFooter({ text: 'Kavià Café — Staff Verification • Remember to add any additional roles needed' })
-                    .setTimestamp();
-
-                if (pending.imageUrl) embed.setImage(pending.imageUrl);
-
-                await verifyLogChannel.send({
-                    content: `<@&${ALLOWED_ROLE_ID}>`,
-                    embeds: [embed],
-                    components: [row],
-                    allowedMentions: { roles: [ALLOWED_ROLE_ID] }
-                });
-
-                try { await interaction.message.delete().catch(() => {}); } catch {}
-
-               return;
-            }
-
-            // Not found path
-            if (selectedAlliance === '__NOT_FOUND__') {
-                const notFoundRow = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`verify_enter_username_${pending.userId}_${messageId}___NOT_FOUND__`)
-                        .setLabel('Enter Roblox Username')
-                        .setStyle(ButtonStyle.Primary)
                 );
-
-                await interaction.update({
-                    embeds: [new EmbedBuilder()
-                        .setTitle('❓ Alliance Not Listed')
-                        .setDescription(
-                            `No worries! Click the button below to enter your Roblox username and tell us your alliance name — a staff member will manually assign your roles. 💜\n\n` +
-                            `*Only you can see this message.*`
-                        )
-                        .setColor('Yellow')
-                        .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
-                        .setTimestamp()],
-                    components: [notFoundRow],
-                    content: ''
-                });
+                await interaction.showModal(modal);
                 return;
             }
 
-            // Alliance path — show Roblox username button
-            const enterUsernameRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`verify_enter_username_${pending.userId}_${messageId}_${selectedAlliance.replace(/\s+/g, '_')}`)
-                    .setLabel('Enter Roblox Username')
-                    .setStyle(ButtonStyle.Primary)
-            );
+            // Build the Roblox username modal
+            const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+            const modal = new ModalBuilder()
+                .setCustomId(`verify_username_modal_${interaction.user.id}_${sessionKey}_${isNotFound ? '__NOT_FOUND__' : selectedAlliance.replace(/\s+/g, '_')}`)
+                .setTitle('Step 2 — Roblox Username');
 
-           await interaction.update({
-                embeds: [new EmbedBuilder()
-                    .setTitle('✅ Alliance Selected')
-                    .setDescription(
-                        `You selected **${selectedAlliance}**.\n\n` +
-                        `Click the button below to enter your Roblox username so we can verify your eligibility. 💜\n\n` +
-                        `*Only you can see this message.*`
+            const modalComponents = [
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('roblox_username')
+                        .setLabel('Your Roblox Username')
+                        .setStyle(TextInputStyle.Short)
+                        .setPlaceholder('e.g. RobloxUser123')
+                        .setRequired(true)
+                        .setMaxLength(50)
+                )
+            ];
+
+            if (isNotFound) {
+                modalComponents.push(
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('alliance_name_claim')
+                            .setLabel('What alliance do you represent?')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. Sakura Cafe')
+                            .setRequired(true)
+                            .setMaxLength(100)
+                    ),
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('invited_by')
+                            .setLabel('Who invited you? (staff member name)')
+                            .setStyle(TextInputStyle.Short)
+                            .setPlaceholder('e.g. Nina')
+                            .setRequired(false)
+                            .setMaxLength(100)
                     )
-                    .setColor(0x9B59B6)
-                    .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
-                    .setTimestamp()],
-                components: [enterUsernameRow],
-                content: ''
-            });
+                );
+            }
 
-
+            modal.addComponents(...modalComponents);
+            await interaction.showModal(modal);
 
         } catch (err) {
             console.error('Error handling alliance verify select:', err);
@@ -1133,6 +1280,50 @@ client.on('interactionCreate', async (interaction) => {
         interaction.customId.startsWith('event_reschedule_')) {
         const eventRequest = client.commands.get('event-request');
         if (eventRequest) await eventRequest.handleButton(interaction, client);
+        return;
+    }
+
+    // ── Verify Me button — start the new step-by-step flow ──
+    if (interaction.customId === 'verify_start') {
+        try {
+            const { loadAlliances } = require('./utils/allianceStorage');
+            const alliances = await loadAlliances().catch(() => []);
+
+            const sessionKey = `${interaction.user.id}_${Date.now()}`;
+
+            // Build alliance dropdown options
+            const options = alliances.slice(0, 23).map(a => ({
+                label: a.groupName.length > 100 ? a.groupName.substring(0, 97) + '...' : a.groupName,
+                value: a.groupName
+            }));
+            options.push({ label: '👤 Staff Member (not an alliance rep)', value: '__STAFF__' });
+            options.push({ label: '❓ My alliance isn\'t listed', value: '__NOT_FOUND__' });
+
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId(`verify_alliance_select_${sessionKey}`)
+                .setPlaceholder('Start typing or scroll to find your alliance...')
+                .addOptions(options.slice(0, 25));
+
+            const row = new ActionRowBuilder().addComponents(selectMenu);
+
+            const embed = new EmbedBuilder()
+                .setTitle('🤝 Step 1 of 3 — Select Your Alliance')
+                .setDescription(
+                    `Welcome, <@${interaction.user.id}>! Let's get you verified. 💜\n\n` +
+                    `**Please select the alliance you represent** from the dropdown below.\n\n` +
+                    `> If you're a Kavià staff member, select **Staff Member**.\n` +
+                    `> If your alliance isn't listed, select **My alliance isn't listed**.\n\n` +
+                    `*Only you can see this message.*`
+                )
+                .setColor(0x9B59B6)
+                .setFooter({ text: 'Kavià Café — Alliance Hub Verification • Step 1 of 3' })
+                .setTimestamp();
+
+            await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+        } catch (err) {
+            console.error('Error handling verify_start:', err);
+            await interaction.reply({ content: '❌ Something went wrong. Please try again!', ephemeral: true }).catch(() => {});
+        }
         return;
     }
 
@@ -1280,7 +1471,52 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
 
-            await handleVerificationPass(interaction, client, userId, messageId, allianceName, robloxUsername, robloxUserId);
+            // Passed — advance to proof of invite step
+            const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+            let stepMsgId = null;
+            if (verifyChannel) {
+                const stepMsg = await verifyChannel.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('📸 Step 3 of 3 — Proof of Invite')
+                        .setDescription(
+                            `Almost done, <@${userId}>! 💜\n\n` +
+                            `Please **send a screenshot or image link** in this channel as proof that you were invited.\n\n` +
+                            `> You can attach an image directly, or paste an image URL.`
+                        )
+                        .setColor(0x9B59B6)
+                        .setFooter({ text: 'Kavià Café — Alliance Hub Verification • Step 3 of 3' })
+                        .setTimestamp()]
+                });
+                stepMsgId = stepMsg.id;
+            }
+
+            verifyProofPending.set(userId, {
+                userId,
+                userTag: interaction.user.tag,
+                sessionKey: messageId,
+                allianceName,
+                allianceNameClaim: null,
+                invitedBy: null,
+                robloxUsername,
+                robloxUserId,
+                inKaviaGroup,
+                stepMessageId: stepMsgId,
+                messageIds: [stepMsgId].filter(Boolean),
+                proofUrl: null
+            });
+
+            await interaction.editReply({
+                embeds: [new EmbedBuilder()
+                    .setTitle('✅ Step 2 Complete — Roblox Verified!')
+                    .setDescription(
+                        `**${robloxUsername}** is now verified in the Kavià Café Roblox group! ✅\n\n` +
+                        `**Head to <#${VERIFICATION_CHANNEL_ID}>** and send your proof of invite to complete verification. 💜`
+                    )
+                    .setColor(0x9B59B6)
+                    .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
+                    .setTimestamp()],
+                components: []
+            });
 
         } catch (err) {
             console.error('Error handling verify_recheck:', err);
@@ -1364,6 +1600,9 @@ client.on('interactionCreate', async (interaction) => {
             let allianceChannel = null;
             let isStaffVerification = pending?.selectedAlliance === '__STAFF__';
 
+            // Remove the unverified role now that they're accepted
+            await member.roles.remove(UNVERIFIED_ROLE_ID).catch(() => {});
+
             if (isStaffVerification) {
                 await member.roles.add('1417981534421520515').catch(console.error);
             } else {
@@ -1431,18 +1670,9 @@ client.on('interactionCreate', async (interaction) => {
                 pendingVerifications.delete(messageId);
             }
 
-        // Delete original verification message and prompt message
-            if (messageId) {
-                const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
-                if (verifyChannel) {
-                    const originalMsg = await verifyChannel.messages.fetch(messageId).catch(() => null);
-                    if (originalMsg) await originalMsg.delete().catch(console.error);
-                    if (pending?.promptMessageId) {
-                        const promptMsg = await verifyChannel.messages.fetch(pending.promptMessageId).catch(() => null);
-                        if (promptMsg) await promptMsg.delete().catch(console.error);
-                    }
-                }
-            }
+            // Clean all user messages from the verification channel
+            await cleanVerificationChannelForUser(client, userId);
+            pendingVerifications.delete(messageId);
 
             // Update the log message
             await interaction.update({
@@ -1930,10 +2160,16 @@ client.on('interactionCreate', async (interaction) => {
                 console.error('Roblox group check failed:', err);
             }
 
+            // Extract the session key — it's the second segment of the customId
+            // Format: verify_username_modal_<userId>_<sessionKey>_<alliancePart>
+            // sessionKey may contain underscores (it's a userId_timestamp), so we need to re-derive
+            // We already have userId (firstUnderscore), so sessionKey = messageId (which is actually the sessionKey)
+            const sessionKey = messageId; // messageId variable holds the sessionKey from parsing above
+
             if (!inKaviaGroup) {
                 const recheckRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`verify_recheck_${userId}_${messageId}_${robloxUsername}_${allianceName.replace(/\s+/g, '_')}`)
+                        .setCustomId(`verify_recheck_${userId}_${sessionKey}_${robloxUsername}_${allianceName.replace(/\s+/g, '_')}`)
                         .setLabel('🔄 Re-check Eligibility')
                         .setStyle(ButtonStyle.Primary)
                 );
@@ -1953,8 +2189,56 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
 
-            // ── All checks passed ──
-            await handleVerificationPass(interaction, client, userId, messageId, allianceName, robloxUsername, robloxUserId, allianceNameClaim, invitedBy);
+            // ── All checks passed — Step 3: Proof of Invite ──
+            // Post a message in the verification channel prompting them to upload proof
+            const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+            let stepMsgId = null;
+            if (verifyChannel) {
+                const stepMsg = await verifyChannel.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('📸 Step 3 of 3 — Proof of Invite')
+                        .setDescription(
+                            `Almost done, <@${userId}>! 💜\n\n` +
+                            `Please **send a screenshot or image link** in this channel as proof that you were invited to the Alliance Hub.\n\n` +
+                            `> You can attach an image directly, or paste an image URL.\n\n` +
+                            `*Only your next message will be captured — anything else will be deleted automatically.*`
+                        )
+                        .setColor(0x9B59B6)
+                        .setFooter({ text: 'Kavià Café — Alliance Hub Verification • Step 3 of 3' })
+                        .setTimestamp()],
+                    components: []
+                });
+                stepMsgId = stepMsg.id;
+            }
+
+            // Store session so messageCreate can capture their proof
+            verifyProofPending.set(userId, {
+                userId,
+                userTag: interaction.user.tag,
+                sessionKey,
+                allianceName,
+                allianceNameClaim: allianceNameClaim || null,
+                invitedBy: invitedBy || null,
+                robloxUsername,
+                robloxUserId,
+                inKaviaGroup,
+                stepMessageId: stepMsgId,
+                messageIds: [stepMsgId].filter(Boolean),
+                proofUrl: null
+            });
+
+            await interaction.editReply({
+                embeds: [new EmbedBuilder()
+                    .setTitle('✅ Step 2 Complete — Roblox Verified!')
+                    .setDescription(
+                        `Great news! **${robloxUsername}** is verified as a Kavià Café Roblox group member. ✅\n\n` +
+                        `**Head to <#${VERIFICATION_CHANNEL_ID}>** and send your proof of invite (a screenshot or image link) to complete your verification. 💜`
+                    )
+                    .setColor(0x9B59B6)
+                    .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
+                    .setTimestamp()],
+                components: []
+            });
 
         } catch (err) {
             console.error('Error handling verify_username_modal:', err);
@@ -2154,20 +2438,20 @@ client.on('interactionCreate', async (interaction) => {
                 components: []
             });
 
-           if (messageId) {
-                const verifyChannel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
-                if (verifyChannel) {
-                    const originalMsg = await verifyChannel.messages.fetch(messageId).catch(() => null);
-                    if (originalMsg) await originalMsg.delete().catch(console.error);
-                    const pendingEntry = pendingVerifications.get(messageId);
-                    if (pendingEntry?.promptMessageId) {
-                        const promptMsg = await verifyChannel.messages.fetch(pendingEntry.promptMessageId).catch(() => null);
-                        if (promptMsg) await promptMsg.delete().catch(console.error);
-                    }
-                }
-            }
-
             pendingVerifications.delete(messageId);
+
+            // Clean all user messages from verification channel
+            await cleanVerificationChannelForUser(client, userId);
+
+            // Remove the unverified role if still present (they may re-verify)
+            try {
+                const guild = await client.guilds.fetch(ALLIANCE_GUILD_ID).catch(() => null);
+                if (guild) {
+                    const member = await guild.members.fetch(userId).catch(() => null);
+                    // Keep unverified role — they were denied and need to re-verify
+                    // (don't remove it on deny so the 24hr reminder still pings them)
+                }
+            } catch {}
 
             try {
                 const user = await client.users.fetch(userId);
@@ -2178,7 +2462,7 @@ client.on('interactionCreate', async (interaction) => {
                             `Hey <@${userId}>,\n\n` +
                             `Unfortunately your verification submission was **denied**.\n\n` +
                             `**Reason:** ${reason}\n\n` +
-                            `Please resubmit your verification in <#${VERIFICATION_CHANNEL_ID}> making sure to follow the format correctly and include all required information. 💜`
+                            `Please click the **✨ Verify Me** button in <#${VERIFICATION_CHANNEL_ID}> to restart your verification. 💜`
                         )
                         .setColor('Red')
                         .setFooter({ text: 'Kavià Café — Alliance Hub' })
@@ -2193,6 +2477,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+
 // Handle messages
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
@@ -2202,87 +2487,138 @@ client.on('messageCreate', async (message) => {
         stats.hubMessage(message.author.id);
     }
 
+    // ── Proof-of-invite capture in verification channel ──
+    // When a user is in the verifyProofPending Map, their next message with an attachment or link is their proof
     if (message.guild?.id === ALLIANCE_GUILD_ID && message.channel.id === VERIFICATION_CHANNEL_ID) {
-        try {
-            await message.react('⏳').catch(console.error);
+        const proofSession = verifyProofPending.get(message.author.id);
+        if (proofSession) {
+            const imageUrl = message.attachments.first()?.url || null;
+            const textContent = message.content.trim();
+            const hasProof = imageUrl || textContent.startsWith('http');
 
-            const { loadAlliances } = require('./utils/allianceStorage');
-            const alliances = await loadAlliances().catch(() => []);
-
-            pendingVerifications.set(message.id, {
-                userId: message.author.id,
-                userTag: message.author.tag,
-                content: message.content,
-                imageUrl: message.attachments.first()?.url || null,
-                selectedAlliance: null,
-                messageId: message.id
-            });
-
-            if (alliances.length === 0) {
-                const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
-                if (!verifyLogChannel) return;
-
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`verify_accept_${message.author.id}_${message.id}`)
-                        .setLabel('✅ Accept')
-                        .setStyle(ButtonStyle.Success),
-                    new ButtonBuilder()
-                        .setCustomId(`verify_deny_${message.author.id}_${message.id}`)
-                        .setLabel('❌ Deny')
-                        .setStyle(ButtonStyle.Danger)
-                );
-
-                const embed = new EmbedBuilder()
-                    .setTitle('📋 New Verification Submission')
-                    .setColor(0x9B59B6)
-                    .addFields(
-                        { name: 'User', value: `<@${message.author.id}> (${message.author.tag})`, inline: true },
-                        { name: 'Submitted At', value: new Date().toLocaleString(), inline: true },
-                        { name: 'Message Content', value: message.content || '*No text*', inline: false }
-                    )
-                    .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
-                    .setTimestamp();
-
-                const imageUrl = message.attachments.first()?.url || null;
-                if (imageUrl) embed.setImage(imageUrl);
-
-                await verifyLogChannel.send({
-                    content: `<@&${ALLOWED_ROLE_ID}>`,
-                    embeds: [embed],
-                    components: [row],
-                    allowedMentions: { roles: [ALLOWED_ROLE_ID] }
-                });
+            if (!hasProof) {
+                // Not a valid proof — delete and prompt again
+                await message.delete().catch(() => {});
+                try {
+                    const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+                    if (channel) {
+                        const warn = await channel.send({
+                            content: `<@${message.author.id}> Please attach a **screenshot** or paste an **image link** as your proof of invite. 💜`
+                        });
+                        setTimeout(() => warn.delete().catch(() => {}), 8_000);
+                    }
+                } catch {}
                 return;
             }
 
-            const options = alliances.slice(0, 25).map(a => ({
-                label: a.groupName,
-                value: a.groupName
-            }));
+            proofSession.proofUrl = imageUrl || textContent;
+            proofSession.messageIds.push(message.id);
+            verifyProofPending.delete(message.author.id);
 
-            options.push({ label: '👤 Staff Member (Not an Alliance Rep)', value: '__STAFF__' });
-            options.push({ label: '❓ My alliance isn\'t listed', value: '__NOT_FOUND__' });
+            // Delete the proof message from the channel after capturing it
+            await message.delete().catch(() => {});
 
-            const selectMenu = new StringSelectMenuBuilder()
-                .setCustomId(`verify_alliance_select_${message.id}`)
-                .setPlaceholder('Select the alliance you represent...')
-                .addOptions(options.slice(0, 25));
+            // Send to verification log
+            const verifyLogChannel = await client.channels.fetch(VERIFICATION_LOG_CHANNEL_ID).catch(() => null);
+            if (!verifyLogChannel) return;
 
-            const row = new ActionRowBuilder().addComponents(selectMenu);
+            const sessionKey = proofSession.sessionKey;
+            const isNotFound = proofSession.allianceName === '__NOT_FOUND__';
 
-           const verifyPrompt = await message.reply({
-                content: `Hey <@${message.author.id}>! 👋 Thanks for submitting your verification.\n\nPlease select which alliance you represent from the dropdown below so we can assign you the correct roles automatically! 💜`,
-                components: [row]
+            const embed = new EmbedBuilder()
+                .setTitle('📋 New Verification Submission')
+                .setColor(0x9B59B6)
+                .addFields(
+                    { name: 'User', value: `<@${proofSession.userId}> (${proofSession.userTag})`, inline: true },
+                    { name: 'Submitted At', value: new Date().toLocaleString(), inline: true },
+                    { name: 'Alliance', value: isNotFound
+                        ? `❓ Not Listed — "${proofSession.allianceNameClaim || 'Unknown'}"` 
+                        : proofSession.allianceName, inline: false },
+                    { name: 'Roblox Username', value: proofSession.robloxUsername, inline: true },
+                    { name: 'In Roblox Group?', value: proofSession.inKaviaGroup ? '✅ Yes' : '❌ No', inline: true }
+                )
+                .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
+                .setTimestamp();
+
+            if (proofSession.invitedBy) embed.addFields({ name: 'Invited By', value: proofSession.invitedBy, inline: true });
+            if (proofSession.proofUrl) embed.setImage(proofSession.proofUrl);
+
+            const components = [];
+            if (isNotFound) {
+                components.push(new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`verify_create_alliance_${proofSession.userId}_${sessionKey}`)
+                        .setLabel('✅ Verify + Create Alliance')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId(`verify_accept_${proofSession.userId}_${sessionKey}`)
+                        .setLabel('✅ Verify Only')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId(`verify_deny_${proofSession.userId}_${sessionKey}`)
+                        .setLabel('❌ Deny')
+                        .setStyle(ButtonStyle.Danger)
+                ));
+            } else {
+                components.push(new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`verify_accept_${proofSession.userId}_${sessionKey}`)
+                        .setLabel('✅ Accept')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId(`verify_deny_${proofSession.userId}_${sessionKey}`)
+                        .setLabel('❌ Deny')
+                        .setStyle(ButtonStyle.Danger)
+                ));
+            }
+
+            await verifyLogChannel.send({
+                content: `<@&${ALLOWED_ROLE_ID}>`,
+                embeds: [embed],
+                components,
+                allowedMentions: { roles: [ALLOWED_ROLE_ID] }
             });
 
-            // Store the prompt message ID so we can delete it later
-            const pending = pendingVerifications.get(message.id);
-            if (pending) pending.promptMessageId = verifyPrompt.id;
+            // Store in pendingVerifications for accept/deny handlers
+            pendingVerifications.set(sessionKey, {
+                userId: proofSession.userId,
+                userTag: proofSession.userTag,
+                selectedAlliance: proofSession.allianceName,
+                allianceNameClaim: proofSession.allianceNameClaim || null,
+                invitedBy: proofSession.invitedBy || null,
+                robloxUsername: proofSession.robloxUsername,
+                robloxUserId: proofSession.robloxUserId,
+                proofUrl: proofSession.proofUrl,
+                messageIds: proofSession.messageIds
+            });
 
-        } catch (err) {
-            console.error('Error handling verification message:', err);
+            // Update the step message to show submitted
+            if (proofSession.stepMessageId) {
+                const channel = await client.channels.fetch(VERIFICATION_CHANNEL_ID).catch(() => null);
+                if (channel) {
+                    const stepMsg = await channel.messages.fetch(proofSession.stepMessageId).catch(() => null);
+                    if (stepMsg) {
+                        await stepMsg.edit({
+                            embeds: [new EmbedBuilder()
+                                .setTitle('✅ Verification Submitted!')
+                                .setDescription(
+                                    `Your verification has been submitted and is now being reviewed by our PR team. You'll receive a DM once a decision has been made. 💜\n\n` +
+                                    `*Please don't send any more messages here — this channel will be cleaned up once your verification is processed.*`
+                                )
+                                .setColor('Green')
+                                .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
+                                .setTimestamp()],
+                            components: []
+                        }).catch(() => {});
+                    }
+                }
+            }
+            return;
         }
+
+        // Any other message in the verify channel from a non-pending user — delete it
+        // (keep bots and pinned messages alone)
+        await message.delete().catch(() => {});
         return;
     }
 
@@ -2302,5 +2638,6 @@ client.on('messageCreate', async (message) => {
     const starttraining = client.commands.get('starttraining');
     if (starttraining) await starttraining.handleMessage(message, client);
 });
+
 
 client.login(process.env.TOKEN);
