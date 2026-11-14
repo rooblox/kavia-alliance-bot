@@ -177,12 +177,19 @@ async function ensureVerificationWelcome(client) {
                 topic: 'Verify yourself as an Allied Representative to gain access to the hub.',
                 permissionOverwrites: [
                     {
+                        // everyone cannot see the channel
                         id: guild.roles.everyone,
+                        deny: [PermissionFlagsBits.ViewChannel],
+                    },
+                    {
+                        // unverified role can see and send
+                        id: UNVERIFIED_ROLE_ID,
                         allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
                     },
                     {
+                        // bot can do everything it needs
                         id: client.user.id,
-                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.AttachFiles],
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.ReadMessageHistory],
                     }
                 ]
             });
@@ -467,9 +474,9 @@ client.once('ready', async () => {
         await deployToGuild(guild.id);
     }
 
-    await ensureBannerMessage(client);
+    await ensureVerificationWelcome(client);  // creates channel first, sets activeVerificationChannelId
+    await ensureBannerMessage(client);         // then posts banner into that channel
     startBannerDailyRefresh(client);
-    await ensureVerificationWelcome(client);
     startVerificationReminderLoop(client);
 
     // ── Ensure team log channels exist ──
