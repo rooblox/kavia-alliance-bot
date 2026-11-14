@@ -105,11 +105,12 @@ async function ensureBannerMessage(client) {
             const botMsg = messages.find(m =>
                 m.author.id === client.user.id &&
                 m.embeds.length > 0 &&
-                m.embeds[0]?.title?.includes('Alliance Hub') &&
+                m.embeds[0]?.image != null &&
                 m.components?.length === 0
             );
             if (botMsg) {
                 bannerMessageId = botMsg.id;
+                console.log('✅ Found existing banner message');
                 return;
             }
         }
