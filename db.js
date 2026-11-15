@@ -112,6 +112,20 @@ const blacklistedUserSchema = new mongoose.Schema({
     addedAt: { type: Date, default: Date.now }
 });
 
+// Persists active /checkin sessions across bot restarts.
+const checkinSessionSchema = new mongoose.Schema({
+    channelId:        { type: String, required: true, unique: true },
+    groupName:        { type: String, required: true },
+    responded:        { type: Boolean, default: false },
+    confirmed:        { type: Boolean, default: false },
+    noResponse:       { type: Boolean, default: false },
+    reminder24Sent:   { type: Boolean, default: false },
+    messageId:        { type: String, default: null },
+    startedAt:        { type: Number, required: true },
+    trackingMessageId:{ type: String, default: null },
+    createdAt:        { type: Date, default: Date.now }
+});
+
 // Persists active /topost sessions across bot restarts.
 const topostSessionSchema = new mongoose.Schema({
     key: { type: String, required: true, unique: true },
@@ -142,6 +156,7 @@ const StrikePending       = mongoose.models.StrikePending       || mongoose.mode
 const QotdSchedule        = mongoose.models.QotdSchedule        || mongoose.model('QotdSchedule', qotdScheduleSchema);
 const AwarenessSchedule   = mongoose.models.AwarenessSchedule   || mongoose.model('AwarenessSchedule', awarenessScheduleSchema);
 const BlacklistedUser     = mongoose.models.BlacklistedUser     || mongoose.model('BlacklistedUser', blacklistedUserSchema);
+const CheckinSession      = mongoose.models.CheckinSession      || mongoose.model('CheckinSession', checkinSessionSchema);
 const TopostSession       = mongoose.models.TopostSession       || mongoose.model('TopostSession', topostSessionSchema);
 const TrainingInvite      = mongoose.models.TrainingInvite      || mongoose.model('TrainingInvite', trainingInviteSchema);
 
@@ -154,6 +169,7 @@ module.exports = {
     QotdSchedule,
     AwarenessSchedule,
     BlacklistedUser,
+    CheckinSession,
     TopostSession,
     TrainingInvite
 };

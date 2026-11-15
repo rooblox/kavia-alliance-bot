@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { loadAlliances } = require('../utils/allianceStorage');
+const { CheckinSession } = require('../db');
 
 const LOG_CHANNEL_ID = '1482430133561196625';
 const CHECKIN_LOG_CHANNEL_ID = '1482430133561196625';
@@ -106,7 +107,7 @@ module.exports = {
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
 
-                    activeCheckins.set(alliance.welcomeChannelId, {
+                    const sessionData = {
                         groupName: alliance.groupName,
                         channelId: alliance.welcomeChannelId,
                         responded: false,
@@ -117,7 +118,25 @@ module.exports = {
                         startedAt: Date.now(),
                         trackingMessageId: trackingMessage?.id,
                         alliances
-                    });
+                    };
+
+                    activeCheckins.set(alliance.welcomeChannelId, sessionData);
+
+                    // Persist to MongoDB
+                    await CheckinSession.findOneAndUpdate(
+                        { channelId: alliance.welcomeChannelId },
+                        {
+                            groupName: alliance.groupName,
+                            responded: false,
+                            confirmed: false,
+                            noResponse: false,
+                            reminder24Sent: false,
+                            messageId: checkinMessage.id,
+                            startedAt: sessionData.startedAt,
+                            trackingMessageId: trackingMessage?.id ?? null
+                        },
+                        { upsert: true, new: true }
+                    ).catch(err => console.error('Failed to persist checkin session:', err));
 
                     sent++;
 
@@ -232,6 +251,8 @@ module.exports = {
         }
 
         activeCheckins.delete(channelId);
+        // Remove from MongoDB
+        await CheckinSession.deleteOne({ channelId }).catch(() => {});
     },
 
     async handleCheckinReply(message, client) {
@@ -246,6 +267,13 @@ module.exports = {
         if (!checkin || checkin.responded || checkin.confirmed) return;
 
         checkin.responded = true;
+
+        // Persist responded flag
+        await CheckinSession.findOneAndUpdate(
+            { channelId: message.channel.id },
+            { responded: true },
+            { new: true }
+        ).catch(() => {});
 
         await message.react('👀').catch(() => {});
 

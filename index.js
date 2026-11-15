@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const { Client, Collection, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
-const { connectDB, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule, TopostSession, TrainingInvite } = require('./db');
+const { connectDB, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule, CheckinSession, TopostSession, TrainingInvite } = require('./db');
 
 const ALLOWED_ROLE_ID = '1485100238715883720';
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -29,6 +29,7 @@ let bannerMessageId = null;
 let activeVerificationChannelId = null; // set at runtime by ensureVerificationWelcome
 const pendingVerifications = new Map();   // messageId → session (old text-based, kept for staff modal logic)
 const verifyProofPending = new Map();     // userId → { sessionKey, allianceName, robloxUsername, robloxUserId, userTag, messageIds[] }
+const verificationTimeouts = new Map();   // userId → { startedAt, timeoutHandle, botMessageIds[] }
 
 const client = new Client({
     intents: [
@@ -329,7 +330,7 @@ async function startVerificationReminderLoop(client) {
     setInterval(run, TWENTY_FOUR_HOURS);
 }
 
-// Helper: bulk-delete all non-pinned messages in verification channel from a specific user
+// Helper: bulk-delete all non-pinned messages in verification channel from a specific user AND any tracked bot messages
 async function cleanVerificationChannelForUser(client, userId) {
     try {
         const channel = await client.channels.fetch(activeVerificationChannelId).catch(() => null);
@@ -338,13 +339,84 @@ async function cleanVerificationChannelForUser(client, userId) {
         const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
         if (!messages) return;
 
-        const toDelete = messages.filter(m => m.author.id === userId && !m.pinned);
+        // Delete user's own messages + any bot messages tracked for this user
+        const session = verificationTimeouts.get(userId);
+        const trackedBotIds = new Set(session?.botMessageIds || []);
+
+        const toDelete = messages.filter(m =>
+            !m.pinned && (m.author.id === userId || trackedBotIds.has(m.id))
+        );
         for (const [, msg] of toDelete) {
             await msg.delete().catch(() => {});
             await new Promise(r => setTimeout(r, 300));
         }
     } catch (err) {
         console.error(`Failed to clean verify channel for ${userId}:`, err);
+    }
+}
+
+// Start a 1-hour verification timeout for a user. If they don't finish, DM them and clean up.
+function startVerificationTimeout(client, userId) {
+    // Clear any existing timeout for this user
+    const existing = verificationTimeouts.get(userId);
+    if (existing?.timeoutHandle) clearTimeout(existing.timeoutHandle);
+
+    const ONE_HOUR = 60 * 60 * 1000;
+
+    const handle = setTimeout(async () => {
+        // Check if they're still unverified (still have the unverified role)
+        try {
+            const guild = await client.guilds.fetch(ALLIANCE_GUILD_ID).catch(() => null);
+            if (!guild) return;
+            const member = await guild.members.fetch(userId).catch(() => null);
+            // If they verified already, just clean up and return
+            if (!member || !member.roles.cache.has(UNVERIFIED_ROLE_ID)) {
+                verificationTimeouts.delete(userId);
+                verifyProofPending.delete(userId);
+                return;
+            }
+
+            // DM them
+            try {
+                await member.send({
+                    embeds: [new EmbedBuilder()
+                        .setTitle('⏰ Verification Session Expired')
+                        .setDescription(
+                            `Hey <@${userId}>! Your verification session in **Kavià Alliance Hub** has expired after 1 hour of inactivity.\n\n` +
+                            `No worries — you can start fresh at any time by clicking the **✨ Verify Me** button in the verification channel. 💜`
+                        )
+                        .setColor(0x9B59B6)
+                        .setFooter({ text: 'Kavià Café — Alliance Hub Verification' })
+                        .setTimestamp()]
+                });
+            } catch (dmErr) {
+                console.error(`Could not DM ${userId} about expired verification:`, dmErr);
+            }
+
+            // Clean up all their messages + tracked bot messages from the verify channel
+            await cleanVerificationChannelForUser(client, userId);
+
+            // Remove from pending maps
+            verifyProofPending.delete(userId);
+            verificationTimeouts.delete(userId);
+
+        } catch (err) {
+            console.error(`Verification timeout handler error for ${userId}:`, err);
+        }
+    }, ONE_HOUR);
+
+    verificationTimeouts.set(userId, {
+        startedAt: Date.now(),
+        timeoutHandle: handle,
+        botMessageIds: existing?.botMessageIds || []
+    });
+}
+
+// Track a bot message in the verify channel so it gets cleaned on timeout/completion
+function trackVerifyBotMessage(userId, messageId) {
+    const session = verificationTimeouts.get(userId);
+    if (session) {
+        session.botMessageIds.push(messageId);
     }
 }
 
@@ -475,6 +547,38 @@ client.once('ready', async () => {
         console.log(`✅ Reloaded ${pendingStrikes.length} pending strike(s) from MongoDB`);
     } catch (err) {
         console.error('❌ Failed to reload pending strikes:', err);
+    }
+
+    try {
+        const checkinSessions = await CheckinSession.find({});
+        const checkinCmd = client.commands.get('checkin');
+        if (checkinCmd?.activeCheckins) {
+            const { loadAlliances } = require('./utils/allianceStorage');
+            const alliances = await loadAlliances().catch(() => []);
+            for (const doc of checkinSessions) {
+                // Skip sessions older than 48 hours — they've already expired
+                const age = Date.now() - doc.startedAt;
+                if (age >= 48 * 60 * 60 * 1000) {
+                    await CheckinSession.deleteOne({ channelId: doc.channelId }).catch(() => {});
+                    continue;
+                }
+                checkinCmd.activeCheckins.set(doc.channelId, {
+                    groupName: doc.groupName,
+                    channelId: doc.channelId,
+                    responded: doc.responded,
+                    confirmed: doc.confirmed,
+                    noResponse: doc.noResponse,
+                    reminder24Sent: doc.reminder24Sent,
+                    messageId: doc.messageId,
+                    startedAt: doc.startedAt,
+                    trackingMessageId: doc.trackingMessageId,
+                    alliances
+                });
+            }
+            console.log(`✅ Reloaded ${checkinCmd.activeCheckins.size} active checkin session(s) from MongoDB`);
+        }
+    } catch (err) {
+        console.error('❌ Failed to reload checkin sessions:', err);
     }
 
     try {
@@ -782,6 +886,7 @@ client.once('ready', async () => {
 
                         if (elapsed >= HOUR_24 && !c.reminder24Sent) {
                             c.reminder24Sent = true;
+                            await CheckinSession.findOneAndUpdate({ channelId }, { reminder24Sent: true }).catch(() => {});
                             try {
                                 const ch = await client.channels.fetch(channelId).catch(() => null);
                                 if (ch) {
@@ -807,6 +912,7 @@ client.once('ready', async () => {
 
                         if (elapsed >= HOUR_48) {
                             c.noResponse = true;
+                            await CheckinSession.deleteOne({ channelId }).catch(() => {});
                             try {
                                 const ch = await client.channels.fetch(channelId).catch(() => null);
                                 const logCh = await client.channels.fetch('1482430133561196625').catch(() => null);
@@ -1401,6 +1507,10 @@ client.on('interactionCreate', async (interaction) => {
                 .setTimestamp();
 
             await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+
+            // Start 1-hour session timeout
+            startVerificationTimeout(client, interaction.user.id);
+
         } catch (err) {
             console.error('Error handling verify_start:', err);
             await interaction.reply({ content: '❌ Something went wrong. Please try again!', ephemeral: true }).catch(() => {});
@@ -1754,6 +1864,10 @@ client.on('interactionCreate', async (interaction) => {
             // Clean all user messages from the verification channel
             await cleanVerificationChannelForUser(client, userId);
             pendingVerifications.delete(messageId);
+            // Clear 1-hour timeout — they've been verified
+            const _vt1 = verificationTimeouts.get(userId);
+            if (_vt1?.timeoutHandle) clearTimeout(_vt1.timeoutHandle);
+            verificationTimeouts.delete(userId);
 
             // Update the log message
             await interaction.update({
@@ -2523,6 +2637,10 @@ client.on('interactionCreate', async (interaction) => {
 
             // Clean all user messages from verification channel
             await cleanVerificationChannelForUser(client, userId);
+            // Clear 1-hour timeout — session resolved
+            const _vt2 = verificationTimeouts.get(userId);
+            if (_vt2?.timeoutHandle) clearTimeout(_vt2.timeoutHandle);
+            verificationTimeouts.delete(userId);
 
             // Remove the unverified role if still present (they may re-verify)
             try {
