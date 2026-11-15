@@ -1370,18 +1370,20 @@ client.on('interactionCreate', async (interaction) => {
 
             const sessionKey = `${interaction.user.id}_${Date.now()}`;
 
-            // Build alliance dropdown options
-            const options = alliances.slice(0, 23).map(a => ({
+            // Build alliance dropdown options (max 25 total including the 2 fixed options)
+            const allianceOptions = alliances.slice(0, 23).map(a => ({
                 label: a.groupName.length > 100 ? a.groupName.substring(0, 97) + '...' : a.groupName,
-                value: a.groupName
+                value: a.groupName.length > 100 ? a.groupName.substring(0, 97) + '...' : a.groupName
             }));
-            options.push({ label: '👤 Staff Member (not an alliance rep)', value: '__STAFF__' });
-            options.push({ label: '❓ My alliance isn\'t listed', value: '__NOT_FOUND__' });
+            allianceOptions.push({ label: '👤 Staff Member (not an alliance rep)', value: '__STAFF__' });
+            allianceOptions.push({ label: '❓ My alliance isn\'t listed', value: '__NOT_FOUND__' });
+
+            console.log(`📋 Alliance dropdown: ${alliances.length} alliances loaded, showing ${allianceOptions.length} options`);
 
             const selectMenu = new StringSelectMenuBuilder()
                 .setCustomId(`verify_alliance_select_${sessionKey}`)
-                .setPlaceholder('Start typing or scroll to find your alliance...')
-                .addOptions(options.slice(0, 25));
+                .setPlaceholder('Scroll to find your alliance...')
+                .addOptions(allianceOptions);
 
             const row = new ActionRowBuilder().addComponents(selectMenu);
 
