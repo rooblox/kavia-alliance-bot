@@ -2211,7 +2211,10 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.customId.startsWith('training_') || interaction.customId.startsWith('bt_') ||
-        interaction.customId.startsWith('blast_yes_') || interaction.customId.startsWith('blast_no_')) {
+        interaction.customId.startsWith('blast_yes_') || interaction.customId.startsWith('blast_no_') ||
+        interaction.customId.startsWith('section_done_') || interaction.customId.startsWith('section_help_') ||
+        interaction.customId.startsWith('quiz_') || interaction.customId.startsWith('resolve_help_') ||
+        interaction.customId.startsWith('ageverify_accept_') || interaction.customId.startsWith('ageverify_deny_')) {
         const starttraining = client.commands.get('starttraining');
         if (starttraining) await starttraining.handleButton(interaction, client);
         return;
