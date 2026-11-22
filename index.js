@@ -1679,6 +1679,7 @@ client.on('interactionCreate', async (interaction) => {
                         .setTimestamp()]
                 });
                 stepMsgId = stepMsg.id;
+                trackVerifyBotMessage(userId, stepMsgId);
             }
 
             verifyProofPending.set(userId, {
@@ -2407,6 +2408,7 @@ client.on('interactionCreate', async (interaction) => {
                     components: []
                 });
                 stepMsgId = stepMsg.id;
+                trackVerifyBotMessage(userId, stepMsgId);
             }
 
             // Store session so messageCreate can capture their proof
