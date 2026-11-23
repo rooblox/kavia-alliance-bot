@@ -1777,9 +1777,10 @@ client.on('interactionCreate', async (interaction) => {
     // ── Verification Accept ──
     if (interaction.customId.startsWith('verify_accept_')) {
         try {
-            const parts = interaction.customId.replace('verify_accept_', '').split('_');
-            const userId = parts[0];
-            const messageId = parts[1];
+            const withoutPrefix = interaction.customId.replace('verify_accept_', '');
+            const firstUnderscore = withoutPrefix.indexOf('_');
+            const userId = withoutPrefix.substring(0, firstUnderscore);
+            const messageId = withoutPrefix.substring(firstUnderscore + 1);
 
             const guild = await client.guilds.fetch(ALLIANCE_GUILD_ID).catch(() => null);
             if (!guild) return interaction.reply({ content: '❌ Guild not found.', ephemeral: true });
@@ -1932,9 +1933,10 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId.startsWith('verify_deny_')) {
         try {
             const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
-            const parts = interaction.customId.replace('verify_deny_', '').split('_');
-            const userId = parts[0];
-            const messageId = parts[1];
+            const withoutDenyPrefix = interaction.customId.replace('verify_deny_', '');
+            const firstUnderscoreDeny = withoutDenyPrefix.indexOf('_');
+            const userId = withoutDenyPrefix.substring(0, firstUnderscoreDeny);
+            const messageId = withoutDenyPrefix.substring(firstUnderscoreDeny + 1);
 
             const modal = new ModalBuilder()
                 .setCustomId(`verify_deny_modal_${userId}_${messageId}`)
