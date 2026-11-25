@@ -30,6 +30,7 @@ let activeVerificationChannelId = null; // set at runtime by ensureVerificationW
 const pendingVerifications = new Map();   // messageId → session (old text-based, kept for staff modal logic)
 const verifyProofPending = new Map();     // userId → { sessionKey, allianceName, robloxUsername, robloxUserId, userTag, messageIds[] }
 const verificationTimeouts = new Map();   // userId → { startedAt, timeoutHandle, botMessageIds[] }
+const recheckSessions = new Map();        // sessionKey → { robloxUsername, allianceName } — used by verify_recheck_ handler
 
 const client = new Client({
     intents: [
@@ -1589,15 +1590,23 @@ client.on('interactionCreate', async (interaction) => {
         try {
             const withoutPrefix = interaction.customId.replace('verify_recheck_', '');
             const firstUnderscore = withoutPrefix.indexOf('_');
-            const secondUnderscore = withoutPrefix.indexOf('_', firstUnderscore + 1);
-            const thirdUnderscore = withoutPrefix.indexOf('_', secondUnderscore + 1);
             const userId = withoutPrefix.substring(0, firstUnderscore);
-            const messageId = withoutPrefix.substring(firstUnderscore + 1, secondUnderscore);
-            const robloxUsername = withoutPrefix.substring(secondUnderscore + 1, thirdUnderscore);
-            const allianceName = withoutPrefix.substring(thirdUnderscore + 1).replace(/_/g, ' ');
+            const sessionKey = withoutPrefix.substring(firstUnderscore + 1);
 
             if (interaction.user.id !== userId) {
                 return interaction.reply({ content: '❌ This is not your verification session.', ephemeral: true });
+            }
+
+            // Look up robloxUsername and allianceName from the recheck session store
+            const recheckSession = recheckSessions.get(sessionKey);
+            const robloxUsername = recheckSession?.robloxUsername || null;
+            const allianceName = recheckSession?.allianceName || null;
+
+            if (!robloxUsername) {
+                return interaction.reply({
+                    content: '❌ Your verification session has expired. Please post in the verification channel to start again.',
+                    ephemeral: true
+                });
             }
 
             await interaction.deferUpdate();
@@ -1640,9 +1649,12 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (!inKaviaGroup) {
+                // Keep session data fresh so the next re-check can look it up
+                if (robloxUsername) recheckSessions.set(sessionKey, { robloxUsername, allianceName });
+
                 const recheckRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`verify_recheck_${userId}_${messageId}_${robloxUsername}_${allianceName.replace(/\s+/g, '_')}`)
+                        .setCustomId(`verify_recheck_${userId}_${sessionKey}`)
                         .setLabel('🔄 Re-check Eligibility')
                         .setStyle(ButtonStyle.Primary)
                 );
@@ -2368,9 +2380,12 @@ client.on('interactionCreate', async (interaction) => {
             const sessionKey = messageId; // messageId variable holds the sessionKey from parsing above
 
             if (!inKaviaGroup) {
+                // Store session data so the recheck handler can retrieve it without embedding it in the ID
+                recheckSessions.set(sessionKey, { robloxUsername, allianceName });
+
                 const recheckRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`verify_recheck_${userId}_${sessionKey}_${robloxUsername}_${allianceName.replace(/\s+/g, '_')}`)
+                        .setCustomId(`verify_recheck_${userId}_${sessionKey}`)
                         .setLabel('🔄 Re-check Eligibility')
                         .setStyle(ButtonStyle.Primary)
                 );
