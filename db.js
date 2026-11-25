@@ -149,6 +149,13 @@ const trainingInviteSchema = new mongoose.Schema({
     respondedAt: { type: Date, default: null }
 });
 
+// Persistent reminder state — survives bot restarts
+// key examples: 'verify_reminder_{userId}', 'missing_rep_{groupName}'
+const reminderStateSchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true },
+    lastSentAt: { type: Date, required: true }
+});
+
 const Alliance            = mongoose.models.Alliance            || mongoose.model('Alliance', allianceSchema);
 const AllianceListMessage = mongoose.models.AllianceListMessage || mongoose.model('AllianceListMessage', allianceListMessageSchema);
 const DisciplinePending   = mongoose.models.DisciplinePending   || mongoose.model('DisciplinePending', disciplinePendingSchema);
@@ -159,6 +166,7 @@ const BlacklistedUser     = mongoose.models.BlacklistedUser     || mongoose.mode
 const CheckinSession      = mongoose.models.CheckinSession      || mongoose.model('CheckinSession', checkinSessionSchema);
 const TopostSession       = mongoose.models.TopostSession       || mongoose.model('TopostSession', topostSessionSchema);
 const TrainingInvite      = mongoose.models.TrainingInvite      || mongoose.model('TrainingInvite', trainingInviteSchema);
+const ReminderState       = mongoose.models.ReminderState       || mongoose.model('ReminderState', reminderStateSchema);
 
 module.exports = {
     connectDB,
@@ -171,5 +179,6 @@ module.exports = {
     BlacklistedUser,
     CheckinSession,
     TopostSession,
-    TrainingInvite
+    TrainingInvite,
+    ReminderState
 };

@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const { Client, Collection, GatewayIntentBits, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
-const { connectDB, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule, CheckinSession, TopostSession, TrainingInvite } = require('./db');
+const { connectDB, DisciplinePending, StrikePending, QotdSchedule, AwarenessSchedule, CheckinSession, TopostSession, TrainingInvite, ReminderState } = require('./db');
 
 const ALLOWED_ROLE_ID = '1485100238715883720';
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -292,6 +292,7 @@ async function ensureVerificationWelcome(client) {
 }
 
 // 24-hour reminder loop — ping unverified members once per day, delete the ping after 30s
+// Reminder timestamps are stored in MongoDB so restarts never re-send early
 async function startVerificationReminderLoop(client) {
     const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
     const run = async () => {
@@ -309,13 +310,26 @@ async function startVerificationReminderLoop(client) {
             const channel = await client.channels.fetch(activeVerificationChannelId).catch(() => null);
             if (!channel) return;
 
+            const now = Date.now();
+
             for (const [, member] of unverifiedMembers) {
                 try {
+                    const dbKey = `verify_reminder_${member.id}`;
+                    const record = await ReminderState.findOne({ key: dbKey });
+                    if (record && now - record.lastSentAt.getTime() < TWENTY_FOUR_HOURS) continue;
+
                     const ping = await channel.send({
                         content: `👋 Hey <@${member.id}>! Just a friendly reminder — you still haven't completed verification. Click the **✨ Verify Me** button above to get started! 💜`
                     });
                     // Delete the ping after 30 seconds to keep the channel clean
                     setTimeout(() => ping.delete().catch(() => {}), 30_000);
+
+                    // Persist timestamp so a restart won't re-ping within the 24h window
+                    await ReminderState.findOneAndUpdate(
+                        { key: dbKey },
+                        { lastSentAt: new Date(now) },
+                        { upsert: true }
+                    ).catch(() => {});
                 } catch (err) {
                     console.error(`Failed to ping unverified member ${member.id}:`, err);
                 }
@@ -827,10 +841,11 @@ client.once('ready', async () => {
             }
 
             // ── Missing rep check every 48 hours ──
+            // Timestamps stored in MongoDB so restarts don't re-send early
             try {
                 const { loadAlliances } = require('./utils/allianceStorage');
-                client._missingRepNotices = client._missingRepNotices || new Map();
                 const now48 = Date.now();
+                const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
                 const alliances = await loadAlliances();
 
                 for (const alliance of alliances) {
@@ -838,8 +853,9 @@ client.once('ready', async () => {
                     const theirRepIds = alliance.theirRepIds || [];
                     if (theirRepIds.length >= 2) continue;
 
-                    const lastSent = client._missingRepNotices.get(alliance.groupName) || 0;
-                    if (now48 - lastSent < 48 * 60 * 60 * 1000) continue;
+                    const dbKey = `missing_rep_${alliance.groupName}`;
+                    const record = await ReminderState.findOne({ key: dbKey });
+                    if (record && now48 - record.lastSentAt.getTime() < FORTY_EIGHT_HOURS) continue;
 
                     const allianceChannel = await client.channels.fetch(alliance.welcomeChannelId).catch(() => null);
                     if (!allianceChannel) continue;
@@ -865,7 +881,12 @@ client.once('ready', async () => {
                         allowedMentions: { roles: [ALLIED_REPS_ROLE_ID] }
                     });
 
-                    client._missingRepNotices.set(alliance.groupName, now48);
+                    // Persist timestamp so a restart won't re-send within the 48h window
+                    await ReminderState.findOneAndUpdate(
+                        { key: dbKey },
+                        { lastSentAt: new Date(now48) },
+                        { upsert: true }
+                    ).catch(() => {});
                 }
             } catch (err) {
                 console.error('Failed to check missing reps:', err);
@@ -1808,6 +1829,9 @@ client.on('interactionCreate', async (interaction) => {
             // Remove the unverified role now that they're accepted
             await member.roles.remove(UNVERIFIED_ROLE_ID).catch(() => {});
 
+            // Clear the verification reminder record — they're verified, no more pings needed
+            await ReminderState.deleteOne({ key: `verify_reminder_${userId}` }).catch(() => {});
+
             if (isStaffVerification) {
                 await member.roles.add('1417981534421520515').catch(console.error);
             } else {
@@ -1834,6 +1858,11 @@ client.on('interactionCreate', async (interaction) => {
                         alliance.markModified('theirRepIds');
                         alliance.markModified('theirReps');
                         await saveAlliance(alliance).catch(console.error);
+
+                        // If they now have 2+ reps, clear the missing-rep reminder record
+                        if (alliance.theirRepIds.length >= 2) {
+                            await ReminderState.deleteOne({ key: `missing_rep_${alliance.groupName}` }).catch(() => {});
+                        }
                     }
 
                     // Send welcome message in alliance channel
@@ -2514,6 +2543,11 @@ client.on('interactionCreate', async (interaction) => {
                     existing.markModified('theirRepIds');
                     existing.markModified('theirReps');
                     await saveAlliance(existing).catch(console.error);
+
+                    // If they now have 2+ reps, clear the missing-rep reminder record
+                    if (existing.theirRepIds.length >= 2) {
+                        await ReminderState.deleteOne({ key: `missing_rep_${existing.groupName}` }).catch(() => {});
+                    }
                 }
             } else {
                 // Create the alliance
